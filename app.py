@@ -6,6 +6,11 @@ import time
 import random
 import socket
 import concurrent.futures
+import html
+import json
+import platform
+import tempfile
+from pathlib import Path
 
 import requests
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -229,7 +234,7 @@ def log(message: str):
 # Telegram
 # ============================================================
 
-def send_telegram(message: str) -> bool:
+def send_telegram(message: str, token: str | None = None, chat_id: str | None = None) -> bool:
     """
     发送 Telegram 消息。
 
@@ -240,31 +245,129 @@ def send_telegram(message: str) -> bool:
     不发送账号、用户名、User ID 等用户信息。
     """
 
-    if not TG_BOT_TOKEN or not TG_CHAT_ID:
+    token = TG_BOT_TOKEN if token is None else token
+    chat_id = TG_CHAT_ID if chat_id is None else chat_id
+    if not token or not chat_id or not message:
         return False
 
     try:
-        url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
 
-        data = {
-            "chat_id": TG_CHAT_ID,
-            "text": message,
-            "parse_mode": "HTML",
-        }
-
-        response = requests.post(
-            url,
-            json=data,
-            timeout=30,
-        )
-
-        response.raise_for_status()
-
+        for index, chunk in enumerate(split_utf8_text(message, limit=3500)):
+            if index:
+                time.sleep(1.1)
+            response = requests.post(
+                url,
+                json={"chat_id": chat_id, "text": chunk, "parse_mode": "HTML"},
+                timeout=30,
+                allow_redirects=False,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or payload.get("ok") is not True:
+                return False
         return True
 
     except Exception:
         # 故意不打印异常，避免异常中包含敏感信息
         return False
+
+
+def split_utf8_text(message: str, limit: int = 2048) -> list[str]:
+    if limit < 4:
+        raise ValueError("INVALID_TEXT_LIMIT")
+    chunks, current, size = [], "", 0
+    for line in message.splitlines(keepends=True):
+        line_size = len(line.encode("utf-8"))
+        if line_size <= limit:
+            if current and size + line_size > limit:
+                chunks.append(current)
+                current, size = "", 0
+            current += line
+            size += line_size
+            continue
+        if current:
+            chunks.append(current)
+            current, size = "", 0
+        for char in line:
+            char_size = len(char.encode("utf-8"))
+            if size + char_size > limit:
+                chunks.append(current)
+                current, size = "", 0
+            current += char
+            size += char_size
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def send_wecom(message: str, webhook_url: str = "") -> bool:
+    from routing import validate_webhook_url
+
+    if not message or not validate_webhook_url(webhook_url):
+        return False
+    try:
+        for index, chunk in enumerate(split_utf8_text(message)):
+            if index:
+                time.sleep(3.1)
+            response = requests.post(
+                webhook_url,
+                json={"msgtype": "text", "text": {"content": chunk}},
+                timeout=30,
+                allow_redirects=False,
+            )
+            if not 200 <= response.status_code < 300:
+                return False
+            payload = response.json()
+            if not isinstance(payload, dict) or type(payload.get("errcode")) is not int:
+                return False
+            if payload["errcode"] != 0:
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def send_notifications(telegram_message: str, plain_message: str,
+                       config: dict | None = None) -> dict:
+    settings = ({"telegram": {"bot_token": TG_BOT_TOKEN, "chat_id": TG_CHAT_ID}}
+                if config is None else config)
+    outcomes = {"telegram": None, "wecom": None}
+    telegram, wecom = settings.get("telegram", {}), settings.get("wecom", {})
+    if telegram.get("bot_token") and telegram.get("chat_id"):
+        try:
+            outcomes["telegram"] = send_telegram(
+                telegram_message, token=telegram["bot_token"], chat_id=telegram["chat_id"]
+            )
+        except Exception:
+            outcomes["telegram"] = False
+    if wecom.get("webhook_url"):
+        try:
+            outcomes["wecom"] = send_wecom(plain_message, wecom["webhook_url"])
+        except Exception:
+            outcomes["wecom"] = False
+    for channel, outcome in outcomes.items():
+        if outcome is not None:
+            log(f"通知 {channel}: {'SUCCESS' if outcome else 'FAILED'}")
+    return outcomes
+
+
+def format_notifications(results: list, success_count: int, total: int) -> tuple[str, str]:
+    message_lines = ["🎁 <b>自动签到通知</b>", ""]
+    plain_lines = ["🎁 自动签到通知", ""]
+    for label, balance, stage in results:
+        if balance is None:
+            suffix = f": 签到失败（{stage}）"
+            prefix = "❌ "
+        else:
+            suffix = f": 余额 {balance}"
+            prefix = "✅ "
+        message_lines.append(prefix + html.escape(label) + suffix)
+        plain_lines.append(prefix + label + suffix)
+    footer = f"📊 成功 {success_count}/{total}"
+    message_lines.extend(["", footer])
+    plain_lines.extend(["", footer])
+    return "\n".join(message_lines), "\n".join(plain_lines)
 
 
 # ============================================================
@@ -1266,10 +1369,15 @@ def _first_visible_locator(
 def browser_login_complete(
     account: dict,
     proxy: dict | None = None,
+    profile: dict | None = None,
+    isolated: bool = False,
 ) -> tuple:
     # --------------------------------------------------------
     # 代理配置
     # --------------------------------------------------------
+
+    if isolated and not (proxy and proxy.get("server")):
+        return None, "NODE_UNREACHABLE"
 
     proxy_config = None
 
@@ -1324,15 +1432,11 @@ def browser_login_complete(
                 proxy=proxy_config,
             )
 
-            context = browser.new_context(
-
-                viewport={
-                    "width": 1920,
-                    "height": 1080,
-                },
-
-                user_agent=USER_AGENT,
-            )
+            context_options = (dict(profile or {}) if isolated else {
+                "viewport": {"width": 1920, "height": 1080},
+                "user_agent": USER_AGENT,
+            })
+            context = browser.new_context(**context_options)
 
             page = context.new_page()
 
@@ -1995,153 +2099,137 @@ def checkin_account(
 # 主签到逻辑
 # ============================================================
 
-def run_checkin():
+def _safe_login_result(result: dict | None, stage: str) -> tuple:
+    from report import STAGES
 
-    # --------------------------------------------------------
-    # 解析账号
-    # --------------------------------------------------------
+    if result is not None and not isinstance(result, dict):
+        return None, "UNEXPECTED"
+    if result:
+        quota = result.get("quota")
+        if type(quota) is int and quota >= 0:
+            return quota, "SUCCESS"
+        return None, "QUOTA_INVALID"
+    return None, stage if isinstance(stage, str) and stage in STAGES and stage != "SUCCESS" else "UNEXPECTED"
+
+
+def checkin_assigned_account(account: dict, candidates: list[dict], profile: dict) -> tuple:
+    for candidate in candidates:
+        if not candidate.get("server"):
+            continue
+        try:
+            result, stage = browser_login_complete(
+                account, proxy=candidate, profile=profile, isolated=True
+            )
+            if result:
+                quota, safe_stage = _safe_login_result(result, stage)
+                if safe_stage == "SUCCESS":
+                    return {"quota": quota}, safe_stage
+        except Exception:
+            pass
+    return None, "PROXY_LIST_EXHAUSTED"
+
+
+def run_checkin(notify: bool = True, manifest_group: dict | None = None,
+                result_path: Path | None = None):
+    from report import write_report
 
     accounts = parse_accounts()
-
     if not accounts:
-
-        # 不打印具体账号
-        log("配置错误：登录凭据未配置")
-
+        log("ACCOUNT_CONFIG_FAIL")
         sys.exit(1)
-
     total = len(accounts)
-
-    log(f"账号数量: {total}")
-
-    # --------------------------------------------------------
-    # 逐账号签到
-    # --------------------------------------------------------
-
-    results = []
-
-    success_count = 0
-
-    # 每个站点的账号计数（用于标签序号）
-    site_counters = {}
-
+    rows = []
+    if manifest_group is not None:
+        if len(manifest_group["account_ids"]) != total or result_path is None:
+            raise ValueError("ROUTE_CONFIG_FAIL")
+        rows = [{"id": account_id, "quota": None, "stage": "UNFINISHED"}
+                for account_id in manifest_group["account_ids"]]
+        write_report(result_path, manifest_group, rows)
+    results, success_count, site_counters = [], 0, {}
+    log(f"ACCOUNT_COUNT: {total}")
     for index, account in enumerate(accounts):
-
         site = account["site"]
-
-        site_counters[site] = (
-            site_counters.get(site, 0) + 1
-        )
-
-        label = (
-            f"{mask_site(site)} "
-            f"账号{site_counters[site]}"
-        )
-
-        log(
-            f"{label}: 开始签到"
-            f"（{index + 1}/{total}）"
-        )
-
-        login_result, stage = checkin_account(
-            account,
-            total,
-            label,
-        )
-
-        # ----------------------------------------------------
-        # 单账号失败，不影响后续账号
-        # ----------------------------------------------------
-
-        if not login_result:
-
-            # 只输出阶段码，不输出任何敏感信息
-            log(f"{label}: 签到失败（{stage}）")
-
-            results.append(
-                (label, None, stage)
-            )
-
-            continue
-
-        # ----------------------------------------------------
-        # 获取余额
-        # ----------------------------------------------------
-
-        balance = format_balance(
-            login_result.get(
-                "quota",
-                0
-            )
-        )
-
-        # ----------------------------------------------------
-        # 只打印余额
-        # ----------------------------------------------------
-
-        log(f"{label}: 当前余额 {balance}")
-
-        results.append(
-            (label, balance, "")
-        )
-
-        success_count += 1
-
-        # ----------------------------------------------------
-        # 多账号时随机间隔，
-        # 降低同 IP 连续登录触发 WAF 的概率
-        # ----------------------------------------------------
-
-        if index < total - 1:
-
-            time.sleep(
-                random.uniform(3, 8)
-            )
-
-    # --------------------------------------------------------
-    # 汇总 Telegram 通知
-    # --------------------------------------------------------
-
-    message_lines = [
-        "🎁 <b>自动签到通知</b>",
-        "",
-    ]
-
-    for label, balance, stage in results:
-
-        if balance is None:
-
-            message_lines.append(
-                f"❌ {label}: 签到失败（{stage}）"
-            )
-
-        else:
-
-            message_lines.append(
-                f"✅ {label}: 余额 {balance}"
-            )
-
-    message_lines.append("")
-
-    message_lines.append(
-        f"📊 成功 {success_count}/{total}"
-    )
-
-    send_telegram(
-        "\n".join(message_lines)
-    )
-
-    # --------------------------------------------------------
-    # 任一账号失败则退出码 1
-    # --------------------------------------------------------
-
+        site_counters[site] = site_counters.get(site, 0) + 1
+        label = f"{mask_site(site)} Account{site_counters[site]}"
+        try:
+            result, stage = checkin_account(account, total, label)
+        except Exception:
+            result, stage = None, "UNEXPECTED"
+        quota, stage = _safe_login_result(result, stage)
+        balance = format_balance(quota) if quota is not None else None
+        results.append((label, balance, stage))
+        if rows:
+            rows[index].update(quota=quota, stage=stage)
+            write_report(result_path, manifest_group, rows)
+        log(f"{label}: {stage}" + (f" {balance}" if balance is not None else ""))
+        if quota is not None:
+            success_count += 1
+            if index < total - 1:
+                time.sleep(random.uniform(3, 8))
+    if notify:
+        send_notifications(*format_notifications(results, success_count, total))
     if success_count < total:
-
-        log("部分账号签到失败")
-
         sys.exit(1)
 
-    log("全部账号签到成功")
+
+def run_isolated_group(routes: list[dict], manifest_group: dict, result_path: Path,
+                       subscription_url: str = "") -> int:
+    from proxy_runtime import download_binary, group_proxy, load_node_links, parse_node_link
+    from report import write_report
+
+    by_id = {account["id"]: account for account in routes}
+    if set(by_id) != set(manifest_group["account_ids"]) or len(routes) != len(by_id):
+        raise ValueError("ROUTE_CONFIG_FAIL")
+    rows = [{"id": account_id, "quota": None, "stage": "UNFINISHED"}
+            for account_id in manifest_group["account_ids"]]
+    write_report(result_path, manifest_group, rows)
+    nodes = {}
+    if any("node" in candidate for account in routes for candidate in account["proxies"]):
+        try:
+            nodes = load_node_links(subscription_url)
+        except Exception:
+            log("NODE_SOURCE_FAIL")
+    outbounds, candidate_tags = {}, {}
+    for account in routes:
+        tags = []
+        for index, candidate in enumerate(account["proxies"], 1):
+            tag = f"{account['id']}_p{index:02}"
+            link = candidate.get("link") or nodes.get(candidate.get("node"))
+            if link is None:
+                log(f"{account['id']} candidate{index}: NODE_MISSING")
+                continue
+            try:
+                outbounds[tag] = parse_node_link(link, f"out-{tag}")
+                tags.append(tag)
+            except Exception:
+                log(f"{account['id']} candidate{index}: NODE_CONFIG_FAIL")
+        candidate_tags[account["id"]] = tags
+    if not outbounds:
+        for row in rows:
+            row["stage"] = "PROXY_LIST_EXHAUSTED"
+        write_report(result_path, manifest_group, rows)
+        return 1
+    runtime_parent = os.environ.get("RUNNER_TEMP") or None
+    try:
+        with tempfile.TemporaryDirectory(prefix="checkin-proxy-", dir=runtime_parent) as directory:
+            runtime_dir = Path(directory)
+            binary = download_binary(platform.system(), platform.machine(), runtime_dir)
+            with group_proxy(outbounds, binary, runtime_dir) as endpoints:
+                for row in rows:
+                    account = by_id[row["id"]]
+                    candidates = [{"server": endpoints[tag]} for tag in candidate_tags[row["id"]]
+                                  if tag in endpoints]
+                    result, stage = checkin_assigned_account(account, candidates, account["profile"])
+                    quota, stage = _safe_login_result(result, stage)
+                    row.update(quota=quota, stage=stage)
+                    write_report(result_path, manifest_group, rows)
+                    log(f"{row['id']}: {stage}")
+    except Exception:
+        for row in rows:
+            if row["stage"] == "UNFINISHED":
+                row["stage"] = "PROXY_START_FAIL"
+        write_report(result_path, manifest_group, rows)
+    return int(any(row["stage"] != "SUCCESS" for row in rows))
 
 
 # ============================================================
@@ -2149,27 +2237,63 @@ def run_checkin():
 # ============================================================
 
 def main():
+    from routing import RUNNERS, build_manifest, parse_config
 
+    worker = bool(os.environ.get("GROUP_ID") or os.environ.get("CHECKIN_MODE"))
+    raw = os.environ.get("CHECKIN_CONFIG")
+    notification_config = None
     try:
+        mode = os.environ.get("CHECKIN_MODE")
+        if mode not in (None, "legacy", "isolated"):
+            raise ValueError("ROUTE_CONFIG_FAIL")
+        if mode == "legacy" and raw not in (None, ""):
+            raise ValueError("ROUTE_CONFIG_FAIL")
+        legacy = mode == "legacy" or (raw is None and mode != "isolated")
+        if legacy:
+            if worker:
+                group = {"group_id": os.environ["GROUP_ID"], "os": os.environ["RUNNER_KEY"],
+                         "account_ids": json.loads(os.environ["ACCOUNT_IDS"]), "mode": "legacy"}
+                if group["os"] != RUNNERS["ubuntu"] or platform.system() != "Linux":
+                    raise ValueError("ROUTE_CONFIG_FAIL")
+                run_checkin(notify=False, manifest_group=group,
+                            result_path=Path(os.environ["RESULT_PATH"]))
+            else:
+                run_checkin()
+            return
+        config = parse_config(raw)
+        notification_config = config["notifications"]
+        manifest = build_manifest(config["accounts"])
+        by_id = {account["id"]: account for account in config["accounts"]}
+        host_os = {"Linux": "ubuntu", "Windows": "windows", "Darwin": "macos"}.get(platform.system())
+        if worker:
+            group = next(g for g in manifest["groups"] if g["group_id"] == os.environ["GROUP_ID"])
+            if (group["account_ids"] != json.loads(os.environ["ACCOUNT_IDS"])
+                    or group["os"] != os.environ["RUNNER_KEY"] or group["os"] != RUNNERS.get(host_os)):
+                raise ValueError("ROUTE_CONFIG_FAIL")
+            code = run_isolated_group([by_id[i] for i in group["account_ids"]], group,
+                                      Path(os.environ["RESULT_PATH"]), config["subscription_url"])
+            sys.exit(code)
+        if any(account["os"] != host_os for account in config["accounts"]):
+            raise ValueError("ROUTE_CONFIG_FAIL")
+        from report import combine_reports
 
-        run_checkin()
-
+        with tempfile.TemporaryDirectory(prefix="checkin-results-") as directory:
+            root = Path(directory)
+            for group in manifest["groups"]:
+                result_dir = root / f"checkin-results-{group['group_id']}"
+                result_dir.mkdir()
+                run_isolated_group([by_id[i] for i in group["account_ids"]], group,
+                                   result_dir / "result.json", config["subscription_url"])
+            results = combine_reports(manifest, root)
+            count = sum(stage == "SUCCESS" for _, _, stage in results)
+            send_notifications(*format_notifications(results, count, len(results)), config=notification_config)
+            sys.exit(int(count != len(results)))
     except KeyboardInterrupt:
-
-        # 不打印任何敏感信息
         sys.exit(130)
-
-    except Exception as exc:
-
-        # 不打印 traceback
-        # 不打印 exception 内容（可能含敏感信息）
-        # 只打印异常类型，便于定位
-        log(f"脚本执行失败: {type(exc).__name__}")
-
-        send_telegram(
-            "❌ <b>签到脚本执行失败</b>"
-        )
-
+    except Exception:
+        log("SCRIPT_FAIL")
+        if not worker and (raw is None or notification_config is not None):
+            send_notifications("<b>Check-in failed</b>", "Check-in failed", config=notification_config)
         sys.exit(1)
 
 

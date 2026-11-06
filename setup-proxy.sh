@@ -34,10 +34,10 @@ fi
 # ---- 获取原始配置内容 ----
 if [ -n "$CONFIG_URL" ]; then
   command -v curl &>/dev/null && FETCH="curl -sL" || FETCH="wget -qO-"
-  echo "[INFO] 从订阅地址获取代理配置: $CONFIG_URL"
+  echo "[INFO] SUBSCRIPTION_FETCH"
   RAW=$($FETCH "$CONFIG_URL")
   if [ -z "$RAW" ]; then
-    echo "[ERROR] 无法获取代理配置（$CONFIG_URL）"
+    echo "[INFO] SUBSCRIPTION_FETCH"
     exit 1
   fi
 else
@@ -81,7 +81,7 @@ if [ ${#NODE_ARRAY[@]} -eq 0 ]; then
 fi
 echo "[INFO] 解析到 ${#NODE_ARRAY[@]} 个代理节点:"
 for node in "${NODE_ARRAY[@]}"; do
-  echo "  - $(display_node "$node")"
+  echo "[INFO] NODE_CANDIDATE"
 done
 
 # ---- 检查依赖 ----
@@ -327,7 +327,7 @@ generate_singbox_config() {
       ;;
 
     *)
-      echo "[ERROR] 不支持的协议: $proto"
+      echo "[ERROR] UNSUPPORTED_PROTOCOL"
       return 1
       ;;
   esac
@@ -422,14 +422,14 @@ for node in "${NODE_ARRAY[@]}"; do
   NODE_LINK="$node"
   echo ""
   echo "======================================================"
-  echo "[INFO] 尝试节点: $(display_node "$node")"
+  echo "[INFO] NODE_CANDIDATE"
   echo "======================================================"
 
   if ! generate_singbox_config; then
     echo "[FAILED] ❌ 节点解析失败，尝试下一个..."
     continue
   fi
-  echo "[INFO] 服务器: ${outbound_server}:${outbound_port}"
+  echo "[INFO] NODE_CANDIDATE"
 
   stop_singbox
   echo "[INFO] 启动 sing-box..."
@@ -438,19 +438,19 @@ for node in "${NODE_ARRAY[@]}"; do
 
   if ! pgrep -f sing-box > /dev/null; then
     echo "[FAILED] ❌ sing-box 启动失败，尝试下一个..."
-    cat sing-box.log
+    echo "[INFO] NATIVE_PROXY_LOG_SUPPRESSED"
     continue
   fi
 
   echo "[INFO] 测试节点连通性..."
   if test_proxy 10; then
-    echo "[SUCCESS] ✅ 节点可用: $(display_node "$node")"
+    echo "[INFO] NODE_CANDIDATE"
     SELECTED="$node"
     break
   fi
 
   echo "[FAILED] ❌ 节点连接失败，尝试下一个..."
-  cat sing-box.log
+  echo "[INFO] NATIVE_PROXY_LOG_SUPPRESSED"
 done
 
 if [ -z "$SELECTED" ]; then
@@ -460,7 +460,7 @@ fi
 
 # ---- 最终验证并保持 sing-box 运行 ----
 echo ""
-echo "[INFO] 选中节点: $(display_node "$SELECTED")"
+echo "[INFO] NODE_CANDIDATE"
 OK=""
 for i in {1..3}; do
   if test_proxy 15; then
@@ -473,7 +473,7 @@ done
 
 if [ -z "$OK" ]; then
   echo "[ERROR] ❌ 代理最终验证失败"
-  cat sing-box.log
+  echo "[INFO] NATIVE_PROXY_LOG_SUPPRESSED"
   exit 1
 fi
 

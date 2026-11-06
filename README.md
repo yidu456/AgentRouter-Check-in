@@ -6,10 +6,114 @@
 
 - ✅ 使用账号密码自动登录（登录即签到）
 - ✅ 多账号 / 多站点支持：`ACCOUNTS` 多行配置（可带站点前缀），逐账号顺序签到，汇总 Telegram 通知
-- ✅ 双通道代理：优先自有节点（sing-box），失败自动回退免费代理池
+- ✅ 新模式：一个 `CHECKIN_CONFIG` 变量配置所有账号、系统、代理列表和通知
+- ✅ 固定系统分组：Ubuntu / Windows / macOS，每组最多 3 个账号
+- ✅ 每账号 1～N 个代理，按顺序尝试，首次成功后停止；新模式不回退免费代理或直连
+- ✅ 旧模式双通道代理：优先自有节点（sing-box），失败自动回退免费代理池
 - ✅ 代理池 WAF 探测：随机抽样并发检测 IP 是否触发阿里云 WAF（按站点独立探测）
-- ✅ Telegram 通知（可选，站点域名打码显示）
-- ✅ GitHub Actions 自动运行（每天北京时间 10:00）
+- ✅ 所有分组结束后统一汇总到 Telegram / 企业微信群机器人（均可选）
+- ✅ GitHub Actions 自动运行（每天北京时间 06:45；实际启动可能受平台调度延迟影响）
+
+## 推荐配置：一个变量配置所有账号
+
+在仓库 **Settings → Secrets and variables → Actions** 添加 Secret：`CHECKIN_CONFIG`，内容为 JSON。下面均为虚构示例，需要替换；没有使用的通知渠道可以删掉，`notifications` 也可省略。
+
+```json
+{
+  "version": 1,
+  "subscription_url": "https://subscription.example.com/example",
+  "notifications": {
+    "telegram": {
+      "bot_token": "example-token",
+      "chat_id": "example-chat"
+    },
+    "wecom": {
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=example-key"
+    }
+  },
+  "accounts": [
+    {
+      "id": "a01",
+      "site": "https://agentrouter.org",
+      "username": "user1@example.com",
+      "password": "example-secret:with-colon",
+      "os": "ubuntu",
+      "proxies": [{"node": "node-a"}, {"node": "node-b"}],
+      "profile": {
+        "viewport": {"width": 1440, "height": 900},
+        "screen": {"width": 1440, "height": 900},
+        "device_scale_factor": 1,
+        "locale": "zh-CN",
+        "timezone_id": "Asia/Shanghai",
+        "color_scheme": "light"
+      }
+    },
+    {
+      "id": "a02",
+      "username": "user2@example.com",
+      "password": "example-secret-two",
+      "os": "macos",
+      "proxies": [{"link": "socks5://proxy.example.com:1080#dedicated-node"}]
+    },
+    {
+      "id": "a03",
+      "username": "user3@example.com",
+      "password": "example-secret-three",
+      "os": "windows",
+      "proxies": [{"node": "node-c"}]
+    }
+  ]
+}
+```
+
+### 账号和代理规则
+
+- 每个账号的 `id` 必须唯一，以字母开头、最多 32 个字母/数字/下划线/短横线；请勿把邮箱或密钥作为 ID，它会显示在任务和通知中。
+- `os` 只能为 `ubuntu`、`windows`、`macos`。同系统账号按 ID 排序，每组最多 3 个；不同分组使用独立 Runner。同一账号不会每天随机更换系统。
+- `site` 可省略，默认 `https://agentrouter.org`。JSON 密码完整保留，包括冒号、竖线和两端空格。
+- `proxies` 必须配置 1～N 个候选。每个候选只写 `node` 或 `link`，不能同时写。`node` 使用共用订阅中的节点名称；`link` 为完整节点分享链接，无须订阅。只使用直接链接时可省略 `subscription_url`。
+- 订阅名称来自分享链接的 `#名称`（URL 解码后），VMess 可使用 `ps`；订阅中重名节点会被拒绝。节点引用、相同直接链接不能重复分配给多个账号。
+- 每次从列表第一个候选开始，失败后关闭浏览器并尝试该账号下一个候选。首次成功即停止，不会为了遍历代理再次登录。全部失败只影响该账号，不使用未配置节点、免费代理或直连。
+- 当前支持明文/base64/base64url 的节点链接订阅及 vless、vmess、trojan、hysteria2/hy2、socks5/socks。不是任意 Clash YAML / sing-box JSON 订阅都能解析；不支持的节点会报告失败，不会静默降级 TLS。
+- `profile` 可省略：默认 1440×900、像素比例 1、`zh-CN`、`Asia/Shanghai`、浅色。可固定视口/屏幕、像素比例 1/2、语言 `zh-CN`/`en-US`、时区 `Asia/Shanghai`/`Asia/Tokyo`/`America/New_York`/`Europe/London` 和 `light`/`dark`。
+- 使用真实系统 Chromium 的默认 UA，不在 Linux 上伪装 macOS。不同节点不保证不同出口 IP；基本配置固定也不代表完整硬件指纹固定或账号不可关联。
+
+### 最终汇总通知
+
+全部系统分组成功、失败或超时结束后，`notify` 任务才汇总发送；账号和分组执行期间不发送消息。缺失或损坏的报告计入失败，不会默认为成功。汇总只包含公开 ID、系统、余额和安全状态码，不包含账号密码、代理链接或响应详情。
+
+新模式从完整校验后的配置确定预期分组；即使汇总清单下载失败，也能按预期账号恢复汇总。旧模式无法恢复清单时，只发送安全的清单异常通知。所有分支共用一个签到并发锁，避免默认分支定时任务与开发分支手动任务同时登录同一批账号。
+
+企业微信使用普通**群机器人 Webhook**：在群内创建机器人，将完整地址放入 `notifications.wecom.webhook_url`。Telegram 使用 `notifications.telegram.bot_token` 和 `chat_id`。可配置任意一个、两个或都不配置。
+
+消息超限时，**同一最终汇总**分段发送，不代表中途通知。企业微信按 2048 UTF-8 字节分段并限速；Telegram 保留 HTML 格式并按保守长度分段。发送失败不重复尝试，以免超时后重复推送；一个渠道失败不阻止另一个。
+
+如果整个 JSON 无法解析，程序不会从不完整配置提取机器人密钥，也不会混用旧变量；此时可能只能通过 GitHub 任务失败状态和安全日志发现错误。
+
+### 启用与验证
+
+新模式有配置错误就失败，不与下面的旧变量混用。删除/清空 GitHub Secret `CHECKIN_CONFIG` 会重新使用旧模式，包括旧模式的免费代理/直连兜底。单个 Secret 最大 48 KiB；所有接收它的任务都能读取其中全部凭据，这不是互不信任任务之间的凭据隔离。不要提交配置到仓库，也不要在外部 PR 上运行带 Secrets 的任务。
+
+依赖基线：Python 3.11、Playwright 1.64.1、sing-box 1.14.4（按系统下载并核对 SHA-256）。Windows/macOS Runner 的额度、计费和可用并发取决于仓库及 GitHub 套餐；版本化 Runner 标签不保证每次分配同一台电脑。
+
+先在 Actions 手动运行 **Credential-free platform smoke**，它只使用本地模拟网页、临时代理和虚构凭据验证三个系统，不会读取 Secrets。然后再运行 **Ayrouter Daily Check-in** 做实际签到。定时任务只使用仓库默认分支的工作流；开发分支上的改动需要按正常流程集成后才影响日常计划任务。
+
+本地检查（Python 3.11 虚拟环境）：
+
+```sh
+python -m pip install requests playwright==1.64.1 pynacl pysocks
+python -m unittest discover -s tests -v
+python -m py_compile app.py routing.py proxy_runtime.py report.py
+bash -n setup-proxy.sh
+python -m playwright install chromium
+python tests/smoke.py
+```
+
+本地运行 `app.py` 会执行真实登录；新模式的本地账号必须全部匹配本机系统，多系统配置应通过 Actions 执行。`setup-proxy.sh` 仍仅供旧 Linux/Actions 路径，不是 Windows 启动器。
+
+## 旧变量兼容模式
+
+下面的旧教程仅在未设置 `CHECKIN_CONFIG` 时适用；依旧使用单个 Ubuntu 任务。
 
 ## 🚀 快速开始
 
@@ -70,7 +174,7 @@
 
 1. 前往仓库的 **Actions** 标签页
 2. 点击 **I understand my workflows, go ahead and enable them**
-3. 脚本将在每天北京时间 10:00 自动运行
+3. 脚本将在每天北京时间 06:45 自动运行
 
 ### 4. 手动测试运行
 
@@ -98,12 +202,12 @@ AgentRouter 使用了阿里云 WAF，在以下情况会触发滑块验证：
 ## 🛠️ 常见问题
 
 ### Q: 如何获取 Telegram Chat ID？
-A: 
+A:
 1. 向 [@userinfobot](https://t.me/userinfobot) 发送任意消息
 2. Bot 会返回你的 Chat ID
 
 ### Q: 脚本运行失败怎么办？
-A: 
+A:
 1. 查看 Actions 运行日志
 2. 检查是否配置了代理
 3. 确认账号密码是否正确
@@ -112,7 +216,7 @@ A:
 
 2.按照图片指示绑定邮箱
 
-3.退出登陆 再通过邮箱登陆 第一次登陆的时候需要选择忘记密码 然后通过邮箱来重置密码 
+3.退出登陆 再通过邮箱登陆 第一次登陆的时候需要选择忘记密码 然后通过邮箱来重置密码
 
 4.确认重置之后 会发邮件到指定的邮箱里面 里面会包含重置后的密码 拿到重置后的密码和邮箱 按照教程填写即可
 <img width="2276" height="1415" alt="cac64968dbc60bfa3a90f288da42b6e9" src="https://github.com/user-attachments/assets/eb0d7d10-ecfa-468e-9905-b18eb34594d3" />
