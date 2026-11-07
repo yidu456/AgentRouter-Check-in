@@ -16,6 +16,8 @@
 
 ## 推荐配置：一个变量配置所有账号
 
+完整字段表、可填写的值、默认值、各协议节点示例和排错说明见 **[CHECKIN_CONFIG 详细配置手册](docs/configuration.md)**。不要将 Xray 内核 JSON 或 Clash YAML 直接放进这个变量。
+
 在仓库 **Settings → Secrets and variables → Actions** 添加 Secret：`CHECKIN_CONFIG`，内容为 JSON。下面均为虚构示例，需要替换；没有使用的通知渠道可以删掉，`notifications` 也可省略。
 
 ```json
