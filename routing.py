@@ -409,7 +409,16 @@ def _prepare(manifest_path):
 
     path = Path(manifest_path)
     path.write_text(json.dumps(manifest, ensure_ascii=True, separators=(",", ":")), encoding="utf-8")
-    matrix = json.dumps({"include": manifest["groups"]}, ensure_ascii=True, separators=(",", ":"))
+    print("MANIFEST_READY")
+
+
+def _matrix(manifest_path):
+    from report import _load_manifest
+
+    manifest = _load_manifest(Path(manifest_path))
+    matrix = json.dumps({"include": [{"os": group["os"], "slot": index}
+                                    for index, group in enumerate(manifest["groups"], 1)]},
+                        ensure_ascii=True, separators=(",", ":"))
     output_path = os.environ.get("GITHUB_OUTPUT")
     if output_path:
         with open(output_path, "a", encoding="utf-8") as stream:
@@ -418,15 +427,39 @@ def _prepare(manifest_path):
         print(f"matrix={matrix}")
 
 
+def _assign(manifest_path, slot, runner):
+    from report import _load_manifest
+
+    manifest = _load_manifest(Path(manifest_path))
+    output_path = os.environ.get("GITHUB_ENV")
+    if not output_path or not 1 <= slot <= len(manifest["groups"]):
+        _fail()
+    group = manifest["groups"][slot - 1]
+    if runner != group["os"]:
+        _fail()
+    values = {"GROUP_ID": group["group_id"], "CHECKIN_MODE": group["mode"], "RUNNER_KEY": runner,
+              "ACCOUNT_IDS": json.dumps(group["account_ids"], ensure_ascii=True, separators=(",", ":"))}
+    with open(output_path, "a", encoding="utf-8") as stream:
+        stream.write("".join(f"{key}={value}\n" for key, value in values.items()))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
-    prepare = subparsers.add_parser("prepare")
-    prepare.add_argument("--manifest", required=True)
+    for name in ("prepare", "matrix", "assign"):
+        command = subparsers.add_parser(name)
+        command.add_argument("--manifest", required=True)
+        if name == "assign":
+            command.add_argument("--slot", type=int, required=True)
+            command.add_argument("--runner", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "prepare":
             _prepare(args.manifest)
+        elif args.command == "matrix":
+            _matrix(args.manifest)
+        elif args.command == "assign":
+            _assign(args.manifest, args.slot, args.runner)
         return 0
     except Exception:
         print("ROUTE_CONFIG_FAIL", file=sys.stderr)

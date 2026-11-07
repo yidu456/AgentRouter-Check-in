@@ -380,14 +380,14 @@ class PrepareCliTests(unittest.TestCase):
             output = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
             return result, manifest, output
 
-    def test_isolated_prepare_writes_only_public_manifest_and_matrix(self):
+    def test_isolated_prepare_writes_public_manifest_without_job_outputs(self):
         secret = "do-not-leak-secret"
         raw = config([account(**{PASSWORD_KEY: secret})])
         result, manifest, output = self.run_prepare({"CHECKIN_CONFIG": json.dumps(raw)})
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(manifest, routing.build_manifest(routing.parse_config(json.dumps(raw))["accounts"]))
-        self.assertEqual(json.loads(output.removeprefix("matrix=").strip()), {"include": manifest["groups"]})
+        self.assertEqual(output, "")
         self.assertNotIn(secret, result.stdout + result.stderr + output + json.dumps(manifest))
 
     def test_github_empty_config_emits_one_legacy_group_with_stable_ids(self):
@@ -416,7 +416,7 @@ class PrepareCliTests(unittest.TestCase):
                 ],
             },
         )
-        self.assertEqual(json.loads(output.removeprefix("matrix=").strip()), {"include": manifest["groups"]})
+        self.assertEqual(output, "")
         self.assertNotIn("pass:with:colons", result.stdout + result.stderr + output)
 
     def test_legacy_username_secret_fallback_gets_one_id(self):

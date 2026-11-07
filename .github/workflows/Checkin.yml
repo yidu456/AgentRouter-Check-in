@@ -5,7 +5,6 @@ on:
   schedule:
     # 06:45 Asia/Shanghai = 22:45 UTC on the previous day.
     - cron: '45 22 * * *'
-  
 
 permissions:
   contents: read
@@ -20,49 +19,72 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-24.04
-    outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Install preparation dependencies
         run: python -m pip install requests playwright==1.64.1
       - name: Build public account manifest
-        id: plan
         env:
           CHECKIN_CONFIG: ${{ secrets.CHECKIN_CONFIG }}
           ACCOUNTS: ${{ secrets.ACCOUNTS }}
           USERNAME: ${{ secrets.USERNAME }}
           PASSWORD: ${{ secrets.PASSWORD }}
         run: python routing.py prepare --manifest manifest.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: checkin-manifest
           path: manifest.json
           if-no-files-found: error
           retention-days: 1
 
-  checkin:
+  plan:
     needs: prepare
     if: needs.prepare.result == 'success'
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v7
+        with:
+          name: checkin-manifest
+          path: assignment
+      - name: Build credential-free OS and slot matrix
+        id: plan
+        run: python routing.py matrix --manifest assignment/manifest.json
+
+  checkin:
+    needs: [prepare, plan]
+    if: needs.prepare.result == 'success' && needs.plan.result == 'success' && needs.plan.outputs.matrix != ''
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: 3
-      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix || '{"include":[{"os":"ubuntu-24.04","slot":0}]}') }}
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+      - name: Download public account assignment
+        uses: actions/download-artifact@v7
+        with:
+          name: checkin-manifest
+          path: assignment
+      - name: Validate the assigned slot and runner
+        run: python routing.py assign --manifest assignment/manifest.json --slot ${{ matrix.slot }} --runner ${{ matrix.os }}
       - name: Install dependencies
         run: python -m pip install requests playwright==1.64.1 pynacl pysocks
       - name: Cache Chromium
         id: browser-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/ms-playwright
@@ -76,7 +98,7 @@ jobs:
         if: steps.browser-cache.outputs.cache-hit != 'true'
         run: python -m playwright install chromium
       - name: Set up legacy Linux proxy
-        if: matrix.mode == 'legacy'
+        if: env.CHECKIN_MODE == 'legacy'
         shell: bash
         env:
           NODE_LINK: ${{ secrets.NODE_LINK }}
@@ -85,10 +107,10 @@ jobs:
       - name: Run assigned accounts without notifications
         env:
           CHECKIN_CONFIG: ${{ secrets.CHECKIN_CONFIG }}
-          CHECKIN_MODE: ${{ matrix.mode }}
-          GROUP_ID: ${{ matrix.group_id }}
+          CHECKIN_MODE: ${{ env.CHECKIN_MODE }}
+          GROUP_ID: ${{ env.GROUP_ID }}
           RUNNER_KEY: ${{ matrix.os }}
-          ACCOUNT_IDS: ${{ toJSON(matrix.account_ids) }}
+          ACCOUNT_IDS: ${{ env.ACCOUNT_IDS }}
           RESULT_PATH: ${{ runner.temp }}/result.json
           ACCOUNTS: ${{ secrets.ACCOUNTS }}
           USERNAME: ${{ secrets.USERNAME }}
@@ -97,20 +119,20 @@ jobs:
         run: python app.py
       - name: Upload only the safe group report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: checkin-results-${{ matrix.group_id }}
+          name: checkin-results-${{ env.GROUP_ID }}
           path: ${{ runner.temp }}/result.json
           if-no-files-found: warn
           retention-days: 1
 
   notify:
-    needs: [prepare, checkin]
+    needs: [prepare, plan, checkin]
     if: always()
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Install summary dependencies
@@ -118,14 +140,14 @@ jobs:
       - name: Download expected manifest
         if: needs.prepare.result == 'success'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: checkin-manifest
           path: reports
       - name: Download completed group reports
         if: needs.prepare.result == 'success'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: checkin-results-*
           path: reports
@@ -140,7 +162,7 @@ jobs:
         run: python report.py notify --manifest reports/manifest.json --reports-dir reports
 
   maintenance:
-    needs: [prepare, checkin, notify]
+    needs: [prepare, plan, checkin, notify]
     if: always() && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-24.04
     permissions:
