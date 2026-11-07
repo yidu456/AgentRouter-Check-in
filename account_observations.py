@@ -52,15 +52,21 @@ def _unique_object(pairs):
     return value
 
 
-def load_history(path):
+def load_history(path, with_status=False):
+    history, status = _empty_history(), "INVALID"
     try:
         with Path(path).open("rb") as stream:
             content = stream.read(MAX_HISTORY_BYTES + 1)
-        if len(content) > MAX_HISTORY_BYTES:
-            return _empty_history()
-        return _validated_history(json.loads(content.decode("utf-8"), object_pairs_hook=_unique_object))
-    except (OSError, ValueError, TypeError, RecursionError):
-        return _empty_history()
+        if len(content) <= MAX_HISTORY_BYTES:
+            history = _validated_history(json.loads(content.decode("utf-8"), object_pairs_hook=_unique_object))
+            status = "RESTORED"
+    except FileNotFoundError:
+        status = "MISSING"
+    except OSError:
+        status = "READ_FAILED"
+    except (ValueError, TypeError, RecursionError):
+        pass
+    return (history, status) if with_status else history
 
 
 def save_history(path, history):

@@ -28,7 +28,9 @@ class Fixture(BaseHTTPRequestHandler):
     def do_GET(self):
         self.server.requests_seen += 1
         is_api = self.path == "/api/user/self"
-        body = json.dumps({"success": True, "data": {"quota": 500000, "group": "default"}}).encode() if is_api else LOGIN_PAGE
+        body = json.dumps({"success": True, "data": {
+            "id": 1, "username": "smoke-user", "quota": 500000, "group": "default",
+        }}).encode() if is_api else LOGIN_PAGE
         self.send_response(200)
         self.send_header("Content-Type", "application/json" if is_api else "text/html")
         self.send_header("Content-Length", str(len(body)))

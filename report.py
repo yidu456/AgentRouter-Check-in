@@ -20,6 +20,8 @@ FAILURE_STAGES = {
     "FORM_OPERATE_TIMEOUT",
     "USER_API_FAIL",
     "API_PAYLOAD_FAIL",
+    "LOGIN_UNVERIFIED",
+    "AUTH_IDENTITY_MISMATCH",
     "QUOTA_INVALID",
     "PAGE_TIMEOUT",
     "BROWSER_LAUNCH_FAIL",
@@ -137,7 +139,7 @@ def _validate_results(rows, expected_ids):
         ):
             _invalid()
         if stage == "SUCCESS":
-            if type(quota) is not int or not 0 <= quota <= 2**63 - 1:
+            if quota is not None and (type(quota) is not int or not 0 <= quota <= 2**63 - 1):
                 _invalid()
         elif quota is not None:
             _invalid()
@@ -219,7 +221,7 @@ def combine_reports(manifest: dict, reports_dir: Path, details: bool = False) ->
             for account_id in manifest_group["account_ids"]:
                 row = rows_by_id[account_id]
                 balance = None
-                if row["stage"] == "SUCCESS":
+                if row["stage"] == "SUCCESS" and row["quota"] is not None:
                     from app import format_balance
 
                     balance = format_balance(row["quota"])
@@ -287,10 +289,15 @@ def observe_balances(rows: list, config: dict, history_path: Path | None = None)
     from routing import RUNNERS
 
     accounts = {f"{RUNNERS[a['os']]} {a['id']}": a for a in config["accounts"]}
-    history = load_history(history_path) if history_path is not None else {"version": 1, "balances": {}}
+    history, status = (load_history(history_path, with_status=True) if history_path is not None
+                       else ({"version": 1, "balances": {}}, "DISABLED"))
     enriched, updated = apply_history(rows, accounts, history)
     if history_path is not None:
+        print(f"HISTORY_LOAD_{status}", flush=True)
+        saved = False
         try:
+            if status == "READ_FAILED":
+                raise OSError("HISTORY_SAVE_FAIL")
             history_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             if not save_history(history_path, updated):
                 raise OSError("HISTORY_SAVE_FAIL")
@@ -298,8 +305,13 @@ def observe_balances(rows: list, config: dict, history_path: Path | None = None)
             if output_path:
                 with open(output_path, "a", encoding="utf-8") as stream:
                     stream.write("BALANCE_HISTORY_READY=true\n")
+            saved = True
         except OSError:
             print("HISTORY_SAVE_FAIL", file=sys.stderr)
+        for _, detail, _ in enriched:
+            detail["history_status"] = ("AVAILABLE" if detail["previous_quota"] is not None
+                                         else "NO_BASELINE" if status == "RESTORED" else status)
+            detail["history_saved"] = saved
     return enrich_countries(enriched) if config["notifications"] else enriched
 
 

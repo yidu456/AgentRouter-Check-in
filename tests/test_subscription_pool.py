@@ -370,6 +370,41 @@ class AllocationTests(unittest.TestCase):
         self.assertEqual(subscription_pool.resolve_random_accounts(normalized, plan, {}, [node(1)])[0]["proxies"],
                          [{"outbound": node(1)}])
 
+    def test_grouped_normalized_os_does_not_inflate_raw_config_limit(self):
+        import routing
+
+        accounts = [{"id": f"a{number:03}", "username": f"u{number:03}",
+                     "password": "p", "proxies": [{"random": 1}]} for number in range(600)]
+        value = {"version": 2, "subscription_url": URL,
+                 "groups": {"ubuntu": {"accounts": accounts}}}
+        raw = json.dumps(value, separators=(",", ":"))
+        self.assertLess(len(raw.encode("utf-8")), routing.MAX_CONFIG_BYTES)
+        normalized = routing.parse_config(raw)
+        # Even after removing ordinary defaults, inherited OS exceeds the raw budget.
+        expanded = copy.deepcopy(normalized)
+        for item in expanded["accounts"]:
+            item.pop("profile")
+            item.pop("site")
+        self.assertGreater(len(json.dumps(expanded, separators=(",", ":")).encode("utf-8")),
+                           routing.MAX_CONFIG_BYTES)
+        nodes = [node(number) for number in range(600)]
+        plan = subscription_pool.make_plan(normalized, {}, nodes, seed=SEED)
+        self.assertEqual(plan, subscription_pool.make_plan(value, {}, nodes, seed=SEED))
+        result = subscription_pool.resolve_random_accounts(normalized, plan, {}, nodes)
+        self.assertEqual(len(result), 600)
+        self.assertEqual(len({item["proxies"][0]["outbound"]["server"] for item in result}), 600)
+
+    def test_grouped_external_json_still_enforces_raw_size_limit(self):
+        import routing
+
+        value = {"version": 2, "subscription_url": URL, "groups": {"ubuntu": {"accounts": [
+            {"id": "a", "username": "u", "password": "p", "proxies": [{"random": 1}]},
+        ]}}}
+        raw = json.dumps(value)
+        oversized = raw + " " * (routing.MAX_CONFIG_BYTES + 1 - len(raw.encode("utf-8")))
+        with self.assertRaisesRegex(ValueError, r"^ROUTE_CONFIG_FAIL$"):
+            routing.parse_config(oversized)
+
     def test_normalized_defaults_and_unicode_do_not_inflate_raw_config_limit(self):
         import routing
 

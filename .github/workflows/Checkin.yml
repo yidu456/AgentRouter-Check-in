@@ -139,6 +139,7 @@ jobs:
       - name: Install summary dependencies
         run: python -m pip install requests playwright==1.64.1
       - name: Restore previous successful account balances
+        id: history-restore
         uses: actions/cache/restore@v5
         continue-on-error: true
         with:
@@ -146,6 +147,14 @@ jobs:
           key: checkin-balances-v1-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             checkin-balances-v1-${{ github.ref_name }}-
+      - name: Report safe history restore status
+        if: always()
+        env:
+          CACHE_OUTCOME: ${{ steps.history-restore.outcome }}
+          CACHE_RESTORED: ${{ steps.history-restore.outputs.cache-matched-key != '' }}
+        run: >-
+          python -c "import os; print('HISTORY_CACHE_RESTORE_FAIL' if os.environ['CACHE_OUTCOME'] != 'success'
+          else 'HISTORY_CACHE_RESTORED' if os.environ['CACHE_RESTORED'] == 'true' else 'HISTORY_CACHE_MISSING')"
       - name: Download expected manifest
         if: needs.prepare.result == 'success'
         continue-on-error: true
@@ -171,12 +180,20 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python report.py notify --manifest reports/manifest.json --reports-dir reports
       - name: Preserve successful balances even if another account failed
+        id: history-save
         if: always() && env.BALANCE_HISTORY_READY == 'true'
         continue-on-error: true
         uses: actions/cache/save@v5
         with:
           path: .superpowers/checkin-history/balances.json
           key: checkin-balances-v1-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Report safe history save status
+        if: always() && env.BALANCE_HISTORY_READY == 'true'
+        env:
+          CACHE_OUTCOME: ${{ steps.history-save.outcome }}
+        run: >-
+          python -c "import os; print('HISTORY_CACHE_SAVE_SUCCESS' if os.environ['CACHE_OUTCOME'] == 'success'
+          else 'HISTORY_CACHE_SAVE_FAIL')"
 
   maintenance:
     needs: [prepare, plan, checkin, notify]

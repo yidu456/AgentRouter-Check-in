@@ -11,31 +11,31 @@ export function adminShell() {
 @media(max-width:780px){#trigger-admin{margin:0;padding:0}#trigger-admin .ar-shell{grid-template-columns:1fr;border-radius:0}#trigger-admin .ar-sidebar{padding:13px 18px;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;border-right:0;border-bottom:1px solid var(--ar-line)}#trigger-admin .ar-sidebar-footer{display:none}#trigger-admin .ar-nav{display:flex;gap:4px}#trigger-admin .ar-nav button{padding:7px 10px}#trigger-admin .ar-nav button[aria-pressed=true]{box-shadow:inset 0 -2px var(--ar-teal)}#trigger-admin .ar-content{padding:22px 20px}}
 @media(max-width:480px){#trigger-admin .ar-brand small{display:none}#trigger-admin .ar-brand{font-size:12px}#trigger-admin .ar-monogram{width:25px;height:25px}#trigger-admin .ar-sidebar{padding:12px;flex-wrap:wrap;gap:8px}#trigger-admin .ar-nav{margin-left:auto}#trigger-admin .ar-nav button{font-size:12px}#trigger-admin .ar-content{padding:20px 14px}#trigger-admin h1{font-size:24px}#trigger-admin .ar-top{flex-wrap:wrap;gap:10px}#trigger-admin .ar-target-main{grid-template-columns:1fr;padding:16px 14px;gap:12px}#trigger-admin .ar-target-actions{flex-direction:row;justify-content:space-between;align-items:center}#trigger-admin .ar-button,#trigger-admin .ar-switch-label,#trigger-admin .ar-logs summary{min-height:44px}#trigger-admin .ar-log-content{padding:0 14px 12px}#trigger-admin .ar-log-row{grid-template-columns:minmax(0,1fr) auto;gap:4px 8px}#trigger-admin .ar-log-time{grid-column:1;display:flex;gap:8px;flex-wrap:wrap}#trigger-admin .ar-log-body{grid-column:1}#trigger-admin .ar-log-row>button{grid-column:2;grid-row:1/span 2}#trigger-admin .ar-next-time{font-size:17px}#trigger-admin .ar-next-time.paused{font-size:14px}#trigger-admin .ar-section-heading{flex-wrap:wrap}}
 </style>
-<div class="ar-shell"><aside class="ar-sidebar" aria-label="页面导航"><div class="ar-brand"><span class="ar-monogram" aria-hidden="true">AR</span><div>AgentRouter<small>Cloudflare 调度</small></div></div><nav class="ar-nav" aria-label="查看方式"><button type="button" data-view="admin" aria-pressed="true">仓库管理</button><button type="button" data-action="logout">退出管理</button></nav><div class="ar-sidebar-footer"><span>独立日期 · 独立随机</span><span>每天 01:00–23:00</span><span>Asia/Shanghai</span></div></aside>
-<div class="ar-content"><header class="ar-top"><div><h1>仓库管理</h1><p class="ar-sub">管理员视图 · 访问 Token 已验证</p></div><button type="button" class="ar-button" data-action="refresh">刷新状态</button></header><p class="ar-notice">这里只记录触发结果。GitHub 已受理不等于签到成功，最终汇总仍由 Actions 发送。刷新仅读取，不补发任务或修复日程。</p><p class="ar-notice" data-config-summary aria-live="polite"></p><div class="ar-section-heading"><h2>运行目标</h2><span class="ar-target-count" data-target-count></span></div><div class="ar-targets" data-targets></div><p class="ar-feedback" role="status" aria-live="polite" data-feedback></p><footer class="ar-bottom"><span>日志最多 20 条 · 删除不改变日程或防重复记录</span><span>北京时间 UTC+8</span></footer></div></div>
+<div class="ar-shell"><aside class="ar-sidebar" aria-label="页面导航"><div class="ar-brand"><span class="ar-monogram" aria-hidden="true">AR</span><div>AgentRouter<small>Cloudflare 调度</small></div></div><nav class="ar-nav" aria-label="管理栏目"><button type="button" data-view="repositories" aria-pressed="true" aria-controls="ar-repositories">仓库管理</button><button type="button" data-view="config" aria-pressed="false" aria-controls="ar-config">配置检查</button><button type="button" data-view="logs" aria-pressed="false" aria-controls="ar-logs">运行日志</button><button type="button" data-action="logout">退出管理</button></nav><div class="ar-sidebar-footer"><span>独立日期 · 独立随机</span><span>每天 01:00–23:00</span><span>Asia/Shanghai</span></div></aside>
+<div class="ar-content"><header class="ar-top"><div><h1 data-page-title>仓库管理</h1><p class="ar-sub">管理员已登录 · 凭据仅在本页内存</p></div><button type="button" class="ar-button" data-action="refresh">刷新状态</button></header><section id="ar-repositories" data-section="repositories" aria-label="仓库管理"><p class="ar-notice">开关与下次时间来自数据库。手动运行不改变自动日程；刷新仅读取，不补发任务。</p><div class="ar-section-heading"><h2>运行目标</h2><span class="ar-target-count" data-target-count></span></div><div class="ar-targets" data-targets></div></section><section id="ar-config" data-section="config" aria-label="配置检查" hidden><h2>运行时配置</h2><p class="ar-notice" data-config-summary aria-live="polite"></p><p class="ar-notice" data-config-advice></p><p class="ar-notice">配置在 Cloudflare Variables &amp; Secrets 修改并保存部署。本页只检查配置，不展示密钥、不验证 GitHub 权限或机器人送达。数据库开关优先于 JSON 默认值。</p></section><section id="ar-logs" data-section="logs" aria-label="运行日志" hidden><p class="ar-notice">按仓库分类，每个工作流／分支目标最多保留 20 条。GitHub 已受理不等于签到成功；最终签到汇总由 Actions 发送。</p><div class="ar-targets" data-logs></div></section><p class="ar-feedback" role="status" aria-live="polite" data-feedback></p><footer class="ar-bottom"><span>删除日志不改变日程或防重复记录</span><span>北京时间 UTC+8</span></footer></div></div>
 <dialog class="ar-dialog" aria-labelledby="ar-dialog-title" data-confirm-dialog><h2 id="ar-dialog-title" data-dialog-title></h2><code class="ar-dialog-target" data-dialog-target></code><p data-dialog-message></p><p data-dialog-note></p><div class="ar-dialog-actions"><button type="button" class="ar-button" data-cancel>取消</button><button type="button" class="ar-button primary" data-confirm>确认</button></div></dialog></section>`;
 }
 
 export function adminClient() {
-    function consumeToken() {
-        const value = new URLSearchParams(location.hash.slice(1)).get("token");
-        if (location.hash) history.replaceState(history.state, "", location.pathname + location.search);
-        return value === null ? null : /^[A-Za-z0-9_-]{32,128}$/.test(value) && !/\s/.test(value) ? value : "";
-    }
-    let token = consumeToken() ?? "";
+    if (location.hash) history.replaceState(history.state, "", location.pathname + location.search);
+    let token = "";
     const root = document.querySelector("#trigger-admin");
     if (!root) { token = ""; return; }
     const publicView = document.querySelector("[data-public-view]");
     const accessFeedback = document.querySelector("[data-access-feedback]");
     const accessInput = document.querySelector("[data-access-input]");
+    const accessUser = document.querySelector("[data-access-username]");
     const accessSubmit = document.querySelector("[data-access-submit]");
     const list = root.querySelector("[data-targets]");
     const feedback = root.querySelector("[data-feedback]");
     const overview = root.querySelector("[data-config-summary]");
+    const advice = root.querySelector("[data-config-advice]");
+    const logList = root.querySelector("[data-logs]");
     const dialog = root.querySelector("[data-confirm-dialog]");
     const refreshButton = root.querySelector('[data-action="refresh"]');
     const errors = {
-        UNAUTHORIZED: "访问 Token 验证失败或已失效。请重新打开原管理链接。",
+        UNAUTHORIZED: "用户名或密码验证失败，或配置已更新。请重新登录。",
+        AUTH_NOT_CONFIGURED: "登录配置缺失或不合法，请在 Cloudflare 配置 ADMIN_USERNAME 和 ADMIN_PASSWORD 后保存部署。",
         NOT_FOUND: "管理入口不可用，请检查访问配置并重新打开管理链接。",
         TARGET_NOT_FOUND: "目标已移除，请刷新状态。", LOG_NOT_FOUND: "日志已移除，请刷新状态。",
         ORIGIN_REJECTED: "请求来源不允许。请在同一管理页面操作。",
@@ -62,7 +62,7 @@ export function adminClient() {
     let busy = false;
     let session = 0;
     let pending = null;
-    const expanded = new Set();
+    let loadError = "";
     const uncertain = new Map();
     const dateFormat = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric",
         month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
@@ -103,21 +103,32 @@ export function adminClient() {
     function announce(message) {
         (verified ? feedback : accessFeedback).textContent = message;
     }
-    function logout(message = "已退出管理。访问 Token 已从本页内存清除；需重新打开原链接进入。") {
+    function showView(view) {
+        for (const name of ["repositories", "config", "logs"]) {
+            root.querySelector(`[data-section="${name}"]`).hidden = name !== view;
+            root.querySelector(`[data-view="${name}"]`).setAttribute("aria-pressed", String(name === view));
+        }
+        root.querySelector("[data-page-title]").textContent = { repositories: "仓库管理", config: "配置检查", logs: "运行日志" }[view];
+    }
+    function logout(message = "已退出管理。用户名和密码已从本页内存清除，请重新登录。") {
         session++;
         token = "";
         accessInput.value = "";
+        accessUser.value = "";
         verified = false;
         busy = false;
         accessSubmit.disabled = false;
         targets = [];
         pending = null;
-        expanded.clear();
+        loadError = "";
         uncertain.clear();
         list.replaceChildren();
+        logList.replaceChildren();
         root.querySelector("[data-target-count]").textContent = "";
         feedback.textContent = "";
         overview.textContent = "";
+        advice.textContent = "";
+        showView("repositories");
         for (const selector of ["[data-dialog-title]", "[data-dialog-target]", "[data-dialog-message]", "[data-dialog-note]"])
             root.querySelector(selector).textContent = "";
         dialog.close();
@@ -131,7 +142,7 @@ export function adminClient() {
         let data;
         try {
             response = await fetch(path, { method: body === undefined ? "GET" : "POST", cache: "no-store",
-                credentials: "omit", redirect: "error", headers: { Authorization: `Bearer ${token}`,
+                credentials: "omit", redirect: "error", headers: { Authorization: token,
                     ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
                 ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
             if (current !== session) throw new Error("SESSION_ENDED");
@@ -193,13 +204,36 @@ export function adminClient() {
             actions.append(label, button(uncertain.has(target.id) ? "重试原请求" : "手动运行", "run",
                 () => confirm("run", target), blocked || !runnable, "primary"));
             main.append(description, actions);
+            article.append(main);
+            return article;
+        });
+        if (!targets.length) cards.push(element("p", "ar-empty", loadError ? "目标读取失败：" + loadError : "暂无配置目标。请在 Cloudflare 添加目标并发布。"));
+        list.replaceChildren(...cards);
+        root.querySelector("[data-target-count]").textContent = `${targets.length} 个目标 · ${targets.filter((target) => target.enabled && !target.error).length} 个开启`;
+        refreshButton.disabled = busy;
+        renderLogs();
+    }
+    function renderLogs() {
+        const groups = new Map();
+        for (const target of targets) {
+            const key = target.repository.toLowerCase();
+            let group = groups.get(key);
+            if (!group) {
+                group = element("article", "ar-target");
+                group.dataset.repository = target.repository;
+                const heading = element("div", "ar-target-main");
+                heading.append(element("h2", "", target.repository));
+                group.append(heading);
+                groups.set(key, group);
+            }
+            const blocked = busy || Boolean(target.error);
             const logs = element("details", "ar-logs");
-            logs.open = expanded.has(target.id);
-            logs.addEventListener("toggle", () => { if (logs.open) expanded.add(target.id); else expanded.delete(target.id); });
-            logs.append(element("summary", "", `最近调度记录 (${target.history.length})`));
+            logs.open = true;
+            logs.dataset.logTargetId = target.id;
+            logs.append(element("summary", "", `${target.workflow} / ${target.ref} / ${target.id} (${target.history.length})`));
             const content = element("div", "ar-log-content");
             const toolbar = element("div", "ar-log-toolbar");
-            toolbar.append(element("span", "", "仅保留最近 20 条"), button("清空该仓库日志", "clear",
+            toolbar.append(element("span", "", "仅保留最近 20 条"), button("清空此目标日志", "clear",
                 () => confirm("clear", target), blocked || !target.history.length, "quiet danger"));
             content.append(toolbar);
             for (const record of target.history) {
@@ -217,20 +251,18 @@ export function adminClient() {
                 row.append(at, body, remove);
                 content.append(row);
             }
-            if (!target.history.length) content.append(element("p", "ar-empty", target.error ? "暂不能读取记录" : "暂无调度记录"));
+            if (!target.history.length) content.append(element("p", "ar-empty", target.error ? errors[target.error] + "，暂不能读取记录" : "暂无调度记录"));
             logs.append(content);
-            article.append(main, logs);
-            return article;
-        });
-        if (!targets.length) cards.push(element("p", "ar-empty", "暂无配置目标。请在 Cloudflare 添加目标并发布。"));
-        list.replaceChildren(...cards);
-        root.querySelector("[data-target-count]").textContent = `${targets.length} 个目标 · ${targets.filter((target) => target.enabled && !target.error).length} 个开启`;
-        refreshButton.disabled = busy;
+            group.append(logs);
+        }
+        logList.replaceChildren(...(groups.size ? [...groups.values()] : [element("p", "ar-empty",
+            loadError ? "日志读取失败：" + loadError : "暂无配置目标或调度记录。手动或自动触发后记录会显示在这里。")]));
     }
     async function refresh(announceSuccess = true) {
         if (!token || busy) return;
         const current = session;
         busy = true;
+        loadError = "";
         accessSubmit.disabled = true;
         refreshButton.disabled = true;
         if (verified) render();
@@ -244,11 +276,26 @@ export function adminClient() {
                     : `JSON 配置错误：${health.config.error?.field ?? "config"}（${health.config.error?.code ?? "CONFIG_INVALID"}）`;
                 const counts = health.github_tokens;
                 overview.textContent = `${configText}；GitHub Token 已配置 ${counts?.configured ?? 0} / 缺失 ${counts?.missing ?? 0} / 不合法 ${counts?.invalid ?? 0}；企业微信 ${health.wecom?.state === "configured" ? "已配置（未验证）" : "未配置或不合法"}；SQLite ${health.storage_binding?.configured ? "已绑定" : "未绑定"}`;
+                const hints = {
+                    JSON_SYNTAX: "检查 JSON 引号、逗号和括号；不要填写注释或多余的末尾逗号。",
+                    JSON_TYPE: "TRIGGER_CONFIG 必须是 Text 变量中的 JSON 字符串，不是对象绑定。",
+                    CONFIG_SIZE: "配置不能超过 64000 字符，请减少目标数量。",
+                    CONFIG_FIELDS: "顶层只包含 version 和 targets。",
+                    CONFIG_VERSION: "version 必须为数字 1。",
+                    TARGETS_INVALID: "targets 必须是数组，最多 100 个目标。",
+                    TARGET_FIELDS: "目标字段为 id、repository、workflow、ref、token_secret；enabled 可省略。",
+                    TARGET_FIELD: "检查提示的字段：仓库 owner/repo、工作流 .yml/.yaml、真实分支 ref、Secret 名称或布尔 enabled。",
+                    DUPLICATE_ID: "每个目标的 id 必须唯一。",
+                    DUPLICATE_TARGET: "同一仓库、工作流和分支只能配置一次。",
+                };
+                advice.textContent = health.config.state === "missing" ? "在 Cloudflare 添加 TRIGGER_CONFIG Text 变量，填写 version:1 和 targets 后保存部署。"
+                    : health.config.state === "invalid" ? hints[health.config.error?.code] ?? "按字段位置修正配置后保存部署。"
+                    : "JSON 校验通过。缺失的 GitHub Token 请按目标 token_secret 名称配置为 Secret；企业微信需完整 webhook URL，数据库绑定名为 SCHEDULES。";
                 verified = true;
                 root.hidden = false;
                 publicView.hidden = true;
-                if (health.config.state !== "valid") throw new Error("CONFIG_INVALID");
-            } else overview.textContent = "配置状态暂不可用";
+                if (health.config.state !== "valid") { showView("config"); throw new Error("CONFIG_INVALID"); }
+            } else { overview.textContent = "配置状态暂不可用"; throw new Error("RESPONSE_INVALID"); }
             const data = await request("/api/admin/targets");
             if (current !== session) return;
             if (data?.status !== "OK" || !Array.isArray(data.targets) || data.targets.length > 100
@@ -261,7 +308,11 @@ export function adminClient() {
             accessFeedback.textContent = "";
             if (announceSuccess) announce("已刷新实际开关、已保存日程和最近记录。未触发运行或修改日程。");
         } catch (error) {
-            if (current === session && error.message !== "SESSION_ENDED") announce(errors[error.message] ?? errors.RESPONSE_INVALID);
+            if (current === session && error.message !== "SESSION_ENDED") {
+                targets = [];
+                loadError = errors[error.message] ?? errors.RESPONSE_INVALID;
+                announce(loadError);
+            }
         } finally {
             if (current === session) { busy = false; accessSubmit.disabled = false; if (verified) render(); else refreshButton.disabled = false; }
         }
@@ -270,8 +321,8 @@ export function adminClient() {
         if (busy || !verified || target.error) return;
         pending = { action, target, logId };
         root.querySelector("[data-dialog-title]").textContent = action === "run" ? "确认手动运行？"
-            : action === "clear" ? "清空这个仓库的日志？" : "删除这条调度日志？";
-        root.querySelector("[data-dialog-target]").textContent = target.repository + " / " + target.ref;
+            : action === "clear" ? "清空这个运行目标的日志？" : "删除这条调度日志？";
+        root.querySelector("[data-dialog-target]").textContent = target.repository + " / " + target.workflow + " / " + target.ref + " / " + target.id;
         root.querySelector("[data-dialog-message]").textContent = action === "run"
             ? uncertain.has(target.id) ? "上次响应未知。只重试原请求 ID，查询或完成同一请求，不创建新运行。"
                 : "将向 GitHub 提交一次手动触发，不改变下一次自动运行时间。"
@@ -304,12 +355,11 @@ export function adminClient() {
                     || data.record.id.toLowerCase() !== body.request_id.toLowerCase() || data.record.result !== data.status)
                     throw new Error("TRANSPORT_UNKNOWN");
                 uncertain.delete(target.id);
-                expanded.add(target.id);
                 message = `${data.cached ? "原请求结果：" : "手动触发："}${resultText(data.status)}。${notifications[data.record.notification]}。下一次自动日程不变。`;
             } else {
                 if (data?.status !== (action === "clear" ? "HISTORY_CLEARED" : "HISTORY_DELETED")) throw new Error("RESPONSE_INVALID");
                 target.history = action === "clear" ? [] : target.history.filter((record) => record.id !== body.log_id);
-                message = action === "clear" ? "已清空该仓库日志，日程与防重复记录保持不变。" : "已删除一条调度日志，日程与防重复记录保持不变。";
+                message = action === "clear" ? "已清空此目标日志，同仓库的其他目标、日程与防重复记录保持不变。" : "已删除一条调度日志，日程与防重复记录保持不变。";
             }
         } catch (error) {
             if (current !== session || error.message === "SESSION_ENDED") return;
@@ -337,12 +387,17 @@ export function adminClient() {
     document.querySelector("[data-access-form]").addEventListener("submit", (event) => {
         event.preventDefault();
         if (busy) return;
-        const value = accessInput.value;
-        logout("正在验证访问 Token…");
-        if (!/^[A-Za-z0-9_-]{32,128}$/.test(value) || /\s/.test(value)) { announce(errors.UNAUTHORIZED); return; }
-        token = value;
+        const user = accessUser.value;
+        const secret = accessInput.value;
+        logout("正在验证用户名和密码…");
+        if (!user || user.length > 64 || /[:\s\x00-\x1f\x7f]/.test(user) || secret.length < 12 || secret.length > 256
+            || /[\x00-\x1f\x7f]/.test(secret)) { announce(errors.UNAUTHORIZED); return; }
+        token = "Basic " + btoa(String.fromCharCode(...new TextEncoder().encode(user + ":" + secret)));
         void refresh();
     });
+    for (const view of ["repositories", "config", "logs"])
+        root.querySelector(`[data-view="${view}"]`).addEventListener("click", () => showView(view));
+    showView("repositories");
     root.querySelector("[data-cancel]").addEventListener("click", () => { pending = null; dialog.close(); });
     dialog.addEventListener("cancel", () => { pending = null; });
     root.querySelector("[data-confirm]").addEventListener("click", () => {
@@ -360,12 +415,6 @@ export function adminClient() {
     });
     addEventListener("pagehide", () => logout("管理会话已清除，请重新打开原链接。"));
     addEventListener("hashchange", () => {
-        const nextToken = consumeToken();
-        if (nextToken === null) return;
-        logout("正在验证访问 Token…");
-        token = nextToken;
-        if (token) void refresh();
-        else announce(errors.UNAUTHORIZED);
+        if (location.hash) history.replaceState(history.state, "", location.pathname + location.search);
     });
-    if (token) void refresh();
 }

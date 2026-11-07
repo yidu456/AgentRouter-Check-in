@@ -30,7 +30,7 @@ test("static administration client is configured-only and never authenticates or
     assert.equal((await worker.fetch(new Request("https://ui.test/admin/client.js", { method: "POST" }), env)).status, 405);
 });
 
-function bootstrap(hash, handler, customHealth = false) {
+function bootstrap(autoLogin, handler, customHealth = false, hash = "") {
     const nodes = new Map();
     const node = (selector) => {
         if (!nodes.has(selector)) nodes.set(selector, { hidden: selector === "#trigger-admin", textContent: "",
@@ -46,7 +46,7 @@ function bootstrap(hash, handler, customHealth = false) {
     let sequence = 0;
     const location = { hash, pathname: "/", search: "?token=query-must-not-authenticate" };
     runInNewContext(`(${adminClient.toString()})();`, {
-        URLSearchParams, Intl, Date, setTimeout, clearTimeout, location,
+        URLSearchParams, Intl, Date, TextEncoder, btoa, setTimeout, clearTimeout, location,
         history: { state: null, replaceState(_state, _title, url) {
             calls.push({ erased: true, url }); location.hash = "";
         } },
@@ -59,12 +59,18 @@ function bootstrap(hash, handler, customHealth = false) {
             calls.push({ url, options }); return handler(url, options);
         },
     });
-    return { nodes, node, calls, listeners, location, settle: () => new Promise((resolve) => setImmediate(resolve)) };
+    const login = (user = "test-admin", secret = "dummy-long-secret-for-tests") => {
+        node("[data-access-username]").value = user;
+        node("[data-access-input]").value = secret;
+        node("[data-access-form]").listeners.submit({ preventDefault() {} });
+    };
+    if (autoLogin) login();
+    return { nodes, node, calls, listeners, location, login, settle: () => new Promise((resolve) => setImmediate(resolve)) };
 }
 
 test("client removes every fragment without using query credentials or fetching anonymously", async () => {
     for (const hash of ["", "#token=short", "#unrelated=private", "#token=" + "x".repeat(129)]) {
-        const page = bootstrap(hash, () => assert.fail("No valid fragment token: no admin request"));
+        const page = bootstrap(false, () => assert.fail("Fragments must never authenticate"), false, hash);
         await page.settle();
         assert.equal(page.location.hash, "");
         assert.equal(page.node("#trigger-admin").hidden, true);
@@ -72,19 +78,20 @@ test("client removes every fragment without using query credentials or fetching 
     }
 });
 
-test("fixed token entry authenticates submitted value without storing it or navigating", async () => {
-    const page = bootstrap("", async () => Response.json({ status: "OK", targets: [uiTarget] }));
-    page.node("[data-access-input]").value = access;
+test("hidden entry authenticates submitted username and secret without storing it or navigating", async () => {
+    const page = bootstrap(false, async () => Response.json({ status: "OK", targets: [uiTarget] }));
+    page.node("[data-access-username]").value = "test-admin";
+    page.node("[data-access-input]").value = "dummy-long-secret-for-tests";
     assert.equal(typeof page.node("[data-access-form]").listeners.submit, "function");
     page.node("[data-access-form]").listeners.submit({ preventDefault() {} });
     await page.settle();
     assert.equal(page.node("[data-access-input]").value, "");
     assert.equal(page.node("#trigger-admin").hidden, false);
-    assert.equal(page.calls.find((call) => call.options).options.headers.Authorization, "Bearer " + access);
+    assert.equal(page.calls.find((call) => call.options).options.headers.Authorization, "Basic " + Buffer.from("test-admin:dummy-long-secret-for-tests").toString("base64"));
 });
 
 test("authenticated overview displays actual configuration checks", async () => {
-    const page = bootstrap("#token=" + access, async (path) => Response.json(path === "/health"
+    const page = bootstrap(true, async (path) => Response.json(path === "/health"
         ? { config: { state: "valid", error: null }, github_tokens: { configured: 2, missing: 1, invalid: 0 },
             wecom: { state: "configured" }, storage_binding: { configured: true } }
         : { status: "OK", targets: [] }), true);
@@ -95,7 +102,7 @@ test("authenticated overview displays actual configuration checks", async () => 
 
 test("overview failures and invalid configuration never leave a blank or expose targets", async () => {
     for (const state of ["missing", "invalid"]) {
-        const page = bootstrap("#token=" + access, async (path) => {
+        const page = bootstrap(true, async (path) => {
             assert.equal(path, "/health", "Invalid config must stop before listing targets");
             return Response.json({ config: { state, error: { field: "targets[0].ref", code: "TARGET_FIELD" } },
                 github_tokens: { configured: 0, missing: 0, invalid: 0 }, wecom: { state: "missing" }, storage_binding: { configured: true } });
@@ -106,7 +113,7 @@ test("overview failures and invalid configuration never leave a blank or expose 
         assert.equal(page.node("[data-targets]").children.length, 1);
     }
     for (const mode of ["401", "transport"]) {
-        const page = bootstrap("#token=" + access, async () => {
+        const page = bootstrap(true, async () => {
             if (mode === "transport") throw Error("private_response_marker");
             return new Response("private_response_marker", { status: 401 });
         }, true);
@@ -120,7 +127,7 @@ test("overview failures and invalid configuration never leave a blank or expose 
 
 test("logout during overview request rejects its late reply before target listing", async () => {
     let finish;
-    const page = bootstrap("#token=" + access, () => new Promise(resolve => { finish = resolve; }), true);
+    const page = bootstrap(true, () => new Promise(resolve => { finish = resolve; }), true);
     page.node('[data-action="logout"]').listeners.click();
     finish(Response.json({config:{state:"valid"}}));
     await page.settle();
@@ -129,12 +136,11 @@ test("logout during overview request rejects its late reply before target listin
     assert.equal(page.node("[data-config-summary]").textContent, "");
 });
 
-test("client verifies fragment Bearer before showing a private view and logout clears it", async () => {
-    const page = bootstrap("#token=" + access, async () => Response.json({ status: "OK", targets: [] }));
+test("client verifies independent credentials before showing a private view and logout clears it", async () => {
+    const page = bootstrap(true, async () => Response.json({ status: "OK", targets: [] }));
     await page.settle();
-    assert.equal(page.calls[0].erased, true);
-    assert.equal(page.calls[1].url, "/api/admin/targets");
-    assert.equal(page.calls[1].options.headers.Authorization, "Bearer " + access);
+    assert.equal(page.calls[0].url, "/api/admin/targets");
+    assert.equal(page.calls[0].options.headers.Authorization, "Basic " + Buffer.from("test-admin:dummy-long-secret-for-tests").toString("base64"));
     assert.equal(page.node("#trigger-admin").hidden, false);
     assert.equal(page.node("[data-public-view]").hidden, true);
     page.node('[data-action="logout"]').listeners.click();
@@ -145,7 +151,7 @@ test("client verifies fragment Bearer before showing a private view and logout c
 
 test("unauthorized bootstrap and expired auth leave no private DOM or raw error detail", async () => {
     let authorized = false;
-    const page = bootstrap("#token=" + access, async () => authorized
+    const page = bootstrap(true, async () => authorized
         ? Response.json({ status: "OK", targets: [] })
         : Response.json({ status: "UNAUTHORIZED", detail: "private_exception_marker" }, { status: 401 }));
     await page.settle();
@@ -155,7 +161,7 @@ test("unauthorized bootstrap and expired auth leave no private DOM or raw error 
     assert.equal(page.node("[data-access-submit]").disabled, false, "Failed auth must permit another token submission");
     assert.ok(!page.node("[data-access-feedback]").textContent.includes("private_exception_marker"));
     authorized = true;
-    const expired = bootstrap("#token=" + access, async () => authorized
+    const expired = bootstrap(true, async () => authorized
         ? Response.json({ status: "OK", targets: [] }) : Response.json({ status: "UNAUTHORIZED" }, { status: 401 }));
     await expired.settle();
     expired.node("[data-targets]").children.push("private-repository-sentinel");
@@ -168,7 +174,7 @@ test("unauthorized bootstrap and expired auth leave no private DOM or raw error 
 
 test("logout invalidates an in-flight listing so its late response cannot show private state", async () => {
     let complete;
-    const page = bootstrap("#token=" + access, () => new Promise((resolve) => { complete = resolve; }));
+    const page = bootstrap(true, () => new Promise((resolve) => { complete = resolve; }));
     await page.settle();
     page.node('[data-action="logout"]').listeners.click();
     complete(Response.json({ status: "OK", targets: [] }));
@@ -179,7 +185,7 @@ test("logout invalidates an in-flight listing so its late response cannot show p
 
 test("HTTP 401 clears the verified view even when its response is not JSON", async () => {
     let expired = false;
-    const page = bootstrap("#token=" + access, async () => expired ? new Response("private-error-marker", { status: 401 })
+    const page = bootstrap(true, async () => expired ? new Response("private-error-marker", { status: 401 })
         : Response.json({ status: "OK", targets: [] }));
     await page.settle();
     page.node("[data-targets]").children.push("private-repository-sentinel");
@@ -207,7 +213,7 @@ test("manual retry preserves UUID after possibly-dispatched 503 responses and in
     for (const status of ["STORAGE_UNAVAILABLE", "STATE_INVALID", "UNKNOWN_FIXTURE_CODE"]) {
         await t.test(status, async () => {
             const ids = [];
-            const page = bootstrap("#token=" + access, async (url, options) => {
+            const page = bootstrap(true, async (url, options) => {
                 if (options.method === "GET") return Response.json({ status: "OK", targets: [uiTarget] });
                 const { request_id } = JSON.parse(options.body);
                 ids.push(request_id);
@@ -233,7 +239,7 @@ test("manual retry preserves UUID after possibly-dispatched 503 responses and in
 
 test("explicit pre-dispatch rejection discards UUID and permits a later new manual request", async () => {
     const ids = [];
-    const page = bootstrap("#token=" + access, async (_url, options) => {
+    const page = bootstrap(true, async (_url, options) => {
         if (options.method === "GET") return Response.json({ status: "OK", targets: [uiTarget] });
         const { request_id } = JSON.parse(options.body);
         ids.push(request_id);
@@ -247,44 +253,56 @@ test("explicit pre-dispatch rejection discards UUID and permits a later new manu
     assert.notEqual(ids[1], ids[0]);
 });
 
-test("hash-only management navigation consumes token before authenticating an already-open public page", async () => {
-    const page = bootstrap("", async () => Response.json({ status: "OK", targets: [] }));
+test("fragments never log in or replace an existing independent login", async () => {
+    const page = bootstrap(false, async () => Response.json({ status: "OK", targets: [] }), false, "#token=" + access);
     await page.settle();
-    assert.equal(page.calls.length, 0);
-    assert.equal(typeof page.listeners.hashchange, "function");
-    page.location.hash = "#token=" + access;
-    page.listeners.hashchange();
     assert.equal(page.location.hash, "");
-    await page.settle();
-    assert.equal(page.node("#trigger-admin").hidden, false);
-    assert.equal(page.calls.at(-1).options.headers.Authorization, "Bearer " + access);
-    const requests = page.calls.filter((call) => call.options).length;
-    page.location.hash = "#unrelated=anchor";
-    page.listeners.hashchange();
-    await page.settle();
-    assert.equal(page.node("#trigger-admin").hidden, false);
-    assert.equal(page.calls.filter((call) => call.options).length, requests);
+    assert.equal(page.node("#trigger-admin").hidden, true);
+    assert.equal(page.calls.filter(call => call.options).length, 0);
 });
 
-test("hash token replacement clears prior session and rejects its late authenticated listing", async () => {
-    let oldReply;
-    let request = 0;
-    const page = bootstrap("#token=" + access, async () => ++request === 1
-        ? new Promise((resolve) => { oldReply = resolve; }) : Response.json({ status: "OK", targets: [] }));
+function textTree(item) { return [item.textContent, ...(item.children ?? []).map(textTree)].join(" "); }
+function hasAction(item, action) { return item.dataset?.action === action || item.children?.some(child => hasAction(child, action)); }
+
+test("three navigation sections separate operations diagnostics and repository-grouped history", async () => {
+    const second = { ...uiTarget, id: "secondary", ref: "dev" };
+    const third = { ...uiTarget, id: "other", repository: "different/repo", error: "STORAGE_UNAVAILABLE" };
+    const page = bootstrap(true, async () => Response.json({ status: "OK", targets: [uiTarget, second, third] }));
     await page.settle();
-    assert.equal(typeof page.listeners.hashchange, "function");
-    page.location.hash = "#token=" + "y".repeat(32);
-    page.listeners.hashchange();
-    assert.equal(page.node("#trigger-admin").hidden, true);
-    assert.equal(page.location.hash, "");
+    assert.equal(page.node('[data-section="repositories"]').hidden, false);
+    assert.equal(page.node('[data-section="config"]').hidden, true);
+    assert.equal(page.node('[data-section="logs"]').hidden, true);
+    assert.ok(!hasAction(page.node("[data-targets]"), "clear"));
+    assert.ok(!hasAction(page.node("[data-targets]"), "delete"));
+    const groups = page.node("[data-logs]").children;
+    assert.equal(groups.length, 2, "Two targets in same repository share a group");
+    assert.match(textTree(groups[0]), /main.*dev/);
+    assert.match(textTree(groups[1]), /存储.*不可用/);
+    assert.ok(!hasAction(page.node("[data-logs]"), "run"));
+    page.node('[data-view="logs"]').listeners.click();
+    assert.equal(page.node('[data-section="repositories"]').hidden, true);
+    assert.equal(page.node('[data-section="logs"]').hidden, false);
+});
+
+test("invalid JSON selects configuration section and shows safe repair advice", async () => {
+    const page = bootstrap(true, async () => Response.json({ config: { state: "invalid", error: {
+        field: "targets[0].ref", code: "TARGET_FIELD" } }, github_tokens: {}, wecom: {}, storage_binding: {} }), true);
     await page.settle();
-    oldReply(Response.json({ status: "OK", targets: [uiTarget] }));
+    assert.equal(page.node('[data-section="config"]').hidden, false);
+    assert.match(page.node("[data-config-summary]").textContent, /targets\[0\].ref/);
+    assert.match(page.node("[data-config-advice]").textContent, /分支|字段/);
+});
+
+test("failed refresh removes stale targets and history with an explicit unavailable state", async () => {
+    let failed = false;
+    const page = bootstrap(true, async () => {
+        if (failed) throw new Error("private_marker");
+        return Response.json({ status: "OK", targets: [uiTarget] });
+    });
     await page.settle();
-    assert.equal(page.calls.filter((call) => call.options).at(-1).options.headers.Authorization, "Bearer " + "y".repeat(32));
-    assert.equal(page.node("[data-target-count]").textContent, "0 个目标 · 0 个开启");
-    page.location.hash = "#token=invalid";
-    page.listeners.hashchange();
-    assert.equal(page.location.hash, "");
-    assert.equal(page.node("#trigger-admin").hidden, true);
-    assert.equal(page.node("[data-targets]").children.length, 0);
+    failed = true;
+    page.node('[data-action="refresh"]').listeners.click();
+    await page.settle();
+    assert.ok(!textTree(page.node("[data-targets]")).includes(uiTarget.repository));
+    assert.match(textTree(page.node("[data-logs]")), /失败|不可用|未知/);
 });

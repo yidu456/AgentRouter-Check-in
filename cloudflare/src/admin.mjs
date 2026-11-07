@@ -10,14 +10,34 @@ export function adminState(env = {}) {
     return typeof token === "string" && ACCESS.test(token) && !/\s/.test(token) ? "configured" : "invalid";
 }
 
+export function loginState(env = {}) {
+    const { ADMIN_USERNAME: user, ADMIN_PASSWORD: secret } = env;
+    if (user === undefined || user === "" || secret === undefined || secret === "") return "missing";
+    return typeof user === "string" && user.length <= 64 && !/[:\s\x00-\x1f\x7f]/.test(user)
+        && typeof secret === "string" && secret.length >= 12 && secret.length <= 256
+        && !/[\x00-\x1f\x7f]/.test(secret) ? "configured" : "invalid";
+}
+
 export async function authorized(request, env) {
-    if (adminState(env) !== "configured") return false;
+    if (adminState(env) !== "configured" || loginState(env) !== "configured") return false;
     const header = request.headers.get("Authorization");
-    const match = /^Bearer ([A-Za-z0-9_-]{32,128})$/.exec(header ?? "");
+    if (!header || header.length > 2048) return false;
+    const match = /^Basic ([A-Za-z0-9+/]+={0,2})$/.exec(header);
     if (!match) return false;
+    let credentials;
+    try {
+        const decoded = atob(match[1]);
+        if (btoa(decoded) !== match[1]) return false;
+        credentials = new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(decoded, (char) => char.charCodeAt(0)));
+    } catch { return false; }
+    const separator = credentials.indexOf(":");
+    if (separator < 1) return false;
+    const user = credentials.slice(0, separator);
+    const secret = credentials.slice(separator + 1);
+    if (loginState({ ADMIN_USERNAME: user, ADMIN_PASSWORD: secret }) !== "configured") return false;
     const bytes = new TextEncoder();
-    const [actual, expected] = await Promise.all([match[1], env.DEBUG_ACCESS_TOKEN]
-        .map((token) => crypto.subtle.digest("SHA-256", bytes.encode(token))));
+    const [actual, expected] = await Promise.all([[user, secret], [env.ADMIN_USERNAME, env.ADMIN_PASSWORD]]
+        .map((pair) => crypto.subtle.digest("SHA-256", bytes.encode(JSON.stringify(pair)))));
     return crypto.subtle.timingSafeEqual(actual, expected);
 }
 
@@ -29,6 +49,7 @@ export function adminJson(value, status = 200) {
 
 export async function adminGate(request, env) {
     if (adminState(env) !== "configured") return adminJson({ status: "NOT_FOUND" }, 404);
+    if (loginState(env) !== "configured") return adminJson({ status: "AUTH_NOT_CONFIGURED" }, 503);
     if (!await authorized(request, env)) return adminJson({ status: "UNAUTHORIZED" }, 401);
     return null;
 }
@@ -105,7 +126,7 @@ export async function adminResponse(request, env) {
         const stub = env.SCHEDULES.get(env.SCHEDULES.idFromName(`v1:${item.id}`));
         return stub.fetch(new Request(`https://scheduler.internal/admin/${action}?id=${item.id}`, {
             method: action === "state" ? "GET" : "POST",
-            headers: { Authorization: `Bearer ${env.DEBUG_ACCESS_TOKEN}`,
+            headers: { Authorization: request.headers.get("Authorization"),
                 ...(action === "state" ? {} : { "Content-Type": "application/json" }) },
             ...(action === "state" ? {} : { body: JSON.stringify(payload) }),
         }));

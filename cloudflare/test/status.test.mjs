@@ -10,7 +10,7 @@ const target = (id = "private-id", overrides = {}) => ({ id,
 const access = "dummy_access_" + "x".repeat(40);
 if (!crypto.subtle.timingSafeEqual) crypto.subtle.timingSafeEqual = (a,b) => timingSafeEqual(Buffer.from(a),Buffer.from(b));
 const configured = (targets = [target()]) => ({
-    DEBUG_ACCESS_TOKEN: access,
+    DEBUG_ACCESS_TOKEN: access, ADMIN_USERNAME: "test-admin", ADMIN_PASSWORD: "dummy-long-secret-for-tests",
     TRIGGER_CONFIG: JSON.stringify({ version: 1, targets }),
     PRIVATE_TOKEN: "github_pat_private_marker_value", SCHEDULES: {},
 });
@@ -32,7 +32,7 @@ test("missing configuration gives a usable read-only page and never initializes 
 test("health reports local configuration without identities, raw JSON, or secret values", async (t) => {
     const http = denyEffects(t);
     const env = configured();
-    const response = await worker.fetch(new Request("https://status.test/health?token=query-private-marker", {headers:{Authorization:`Bearer ${access}`}}), env);
+    const response = await worker.fetch(new Request("https://status.test/health?token=query-private-marker", {headers:{Authorization:"Basic " + Buffer.from("test-admin:dummy-long-secret-for-tests").toString("base64")}}), env);
     const raw = await response.text();
     const status = JSON.parse(raw);
     assert.equal(status.mode, "read_only");
@@ -125,10 +125,10 @@ test("public status has no forms, scripts, sensitive values or caching", async (
 test("POST cannot trigger anything and HEAD is bodyless", async (t) => {
     const http = denyEffects(t);
     for (const path of ["/", "/health"]) {
-        const response = await worker.fetch(new Request(`https://status.test${path}`, { method: "POST", headers:{Authorization:`Bearer ${access}`} }), configured());
+        const response = await worker.fetch(new Request(`https://status.test${path}`, { method: "POST", headers:{Authorization:"Basic " + Buffer.from("test-admin:dummy-long-secret-for-tests").toString("base64")} }), configured());
         assert.equal(response.status, 405);
         assert.match(response.headers.get("Allow"), /GET/);
-        const head = await worker.fetch(new Request(`https://status.test${path}`, { method: "HEAD", headers:{Authorization:`Bearer ${access}`} }), configured());
+        const head = await worker.fetch(new Request(`https://status.test${path}`, { method: "HEAD", headers:{Authorization:"Basic " + Buffer.from("test-admin:dummy-long-secret-for-tests").toString("base64")} }), configured());
         assert.equal(head.status, 200);
         assert.equal(await head.text(), "");
     }
@@ -140,7 +140,7 @@ test("configured admin adds only a private-data-free same-origin bootstrap", asy
     denyEffects(t);
     const env = { ...configured(), DEBUG_ACCESS_TOKEN: "private_access_marker_" + "x".repeat(32),
         SCHEDULES: { idFromName() { assert.fail("Public page must not read persisted state"); } } };
-    const response = await worker.fetch(new Request("https://status.test/token#token=never-echo-this"), env);
+    const response = await worker.fetch(new Request(`https://status.test/${env.DEBUG_ACCESS_TOKEN}#token=never-echo-this`), env);
     const html = await response.text();
     assert.match(html, /src="\/admin\/client\.js"/);
     assert.match(html, /data-admin-panel[^>]*hidden/);

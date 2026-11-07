@@ -31,7 +31,7 @@ function fixture(t, options = {}) {
         return pending;
     } };
     const env = { TRIGGER_CONFIG: config(options.targets ?? [target()]),
-        DEBUG_ACCESS_TOKEN: access, GITHUB_TOKEN_A: "github_pat_dummy_tests" };
+        DEBUG_ACCESS_TOKEN: access, ADMIN_USERNAME: "test-admin", ADMIN_PASSWORD: "dummy-long-secret-for-tests", GITHUB_TOKEN_A: "github_pat_dummy_tests" };
     const object = new TriggerSchedule(ctx, env);
     const namespaceCalls = [];
     env.SCHEDULES = {
@@ -44,7 +44,7 @@ function fixture(t, options = {}) {
     const http = t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 204 }));
     const call = (path = "", body, headers = {}) => worker.fetch(new Request(
         `https://unit.test/api/admin/targets${path}`, { method: body === undefined ? "GET" : "POST",
-            headers: { Authorization: `Bearer ${access}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...headers },
+            headers: { Authorization: "Basic " + Buffer.from("test-admin:dummy-long-secret-for-tests").toString("base64"), ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...headers },
             ...(body === undefined ? {} : { body: typeof body === "string" ? body : JSON.stringify(body) }) }), env);
     return { env, object, ctx, storage, values, http, namespaceCalls, call, alarm: () => alarm,
         setNow(value) { now = typeof value === "number" ? value : Date.parse(value); },
@@ -126,7 +126,7 @@ test("missing target and storage use safe errors without exception text", async 
     assert.deepEqual(await response.json(), { status: "STORAGE_UNAVAILABLE" });
 });
 
-test("access states and authorization use exact URL-safe bearer tokens and fixed SHA-256 comparison", async (t) => {
+test("entry state and Basic authorization use exact credentials and fixed SHA-256 comparison", async (t) => {
     assert.equal(adminState({}), "disabled");
     assert.equal(adminState({ DEBUG_ACCESS_TOKEN: "private" }), "invalid");
     assert.equal(adminState({ DEBUG_ACCESS_TOKEN: access }), "configured");
@@ -135,11 +135,12 @@ test("access states and authorization use exact URL-safe bearer tokens and fixed
         sizes.push([a.byteLength, b.byteLength]);
         return timingSafeEqual(Buffer.from(a), Buffer.from(b));
     });
-    for (const [header, want] of [[`Bearer ${access}`, true], [`Bearer ${"x".repeat(32)}`, false],
-        [`Basic ${access}`, false], [`Bearer ${access} extra`, false], ["Bearer invalid+token", false]]) {
-        assert.equal(await authorized(new Request("https://unit.test/", { headers: { Authorization: header } }),
-            { DEBUG_ACCESS_TOKEN: access }), want);
+    const env = { DEBUG_ACCESS_TOKEN: access, ADMIN_USERNAME: "test-admin", ADMIN_PASSWORD: "dummy-long-secret-for-tests" };
+    for (const [value, want] of [["test-admin:dummy-long-secret-for-tests", true], ["other:dummy-long-secret-for-tests", false]]) {
+        assert.equal(await authorized(new Request("https://unit.test/", { headers: {
+            Authorization: "Basic " + Buffer.from(value).toString("base64") } }), env), want);
     }
+    assert.equal(await authorized(new Request("https://unit.test/", { headers: { Authorization: `Bearer ${access}` } }), env), false);
     assert.deepEqual(sizes, [[32, 32], [32, 32]]);
 });
 
@@ -330,7 +331,7 @@ test("streamed JSON measures UTF-8 bytes, ignores misleading length and cancels 
     const f = fixture(t);
     let cancelled = false;
     const oversized = new Request("https://unit.test/api/admin/targets/github_a/run", { method: "POST", duplex: "half",
-        headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json", "Content-Length": "2" },
+        headers: { Authorization: "Basic " + Buffer.from("test-admin:dummy-long-secret-for-tests").toString("base64"), "Content-Type": "application/json", "Content-Length": "2" },
         body: new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode("\u4e2d".repeat(342))); },
             cancel() { cancelled = true; } }) });
     assert.equal((await worker.fetch(oversized, f.env)).status, 413);
@@ -339,7 +340,7 @@ test("streamed JSON measures UTF-8 bytes, ignores misleading length and cancels 
     const body = JSON.stringify({ request_id: uuid() });
     assert.equal((await f.call("/github_a/run", body + " ".repeat(1024 - body.length))).status, 200);
     const invalidUtf8 = new Request("https://unit.test/api/admin/targets/github_a/run", { method: "POST",
-        headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
+        headers: { Authorization: "Basic " + Buffer.from("test-admin:dummy-long-secret-for-tests").toString("base64"), "Content-Type": "application/json" },
         body: Uint8Array.from([0xff]) });
     assert.equal((await worker.fetch(invalidUtf8, f.env)).status, 400);
     assert.equal(f.http.mock.callCount(), 1);

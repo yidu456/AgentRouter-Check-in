@@ -29,6 +29,8 @@ export function parseConfig(raw) {
     const bindings = new Set();
     for (const [index, target] of config.targets.entries()) {
         const field = `targets[${index}]`;
+        if (target && typeof target === "object" && !Array.isArray(target) && !Object.hasOwn(target, "enabled"))
+            target.enabled = true;
         if (!exactKeys(target, TARGET_KEYS)) invalid(field, "TARGET_FIELDS");
         const checks = {
             id: typeof target.id === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.id),
@@ -51,7 +53,7 @@ export function parseConfig(raw) {
 }
 
 export function tokenFor(target, env) {
-    if (["DEBUG_ACCESS_TOKEN", "WECOM_WEBHOOK_URL", "TRIGGER_CONFIG", "SCHEDULES"].includes(target.token_secret)) return null;
+    if (["DEBUG_ACCESS_TOKEN", "ADMIN_USERNAME", "ADMIN_PASSWORD", "WECOM_WEBHOOK_URL", "TRIGGER_CONFIG", "SCHEDULES"].includes(target.token_secret)) return null;
     const token = env[target.token_secret];
     return typeof token === "string" && /^[A-Za-z0-9_]{10,255}$/.test(token) ? token : null;
 }

@@ -1,278 +1,105 @@
-# AgentRouter 自动签到脚本
+# AgentRouter 自动签到
 
-每天自动登录 [AgentRouter](https://agentrouter.org/register?aff=Rm0L) 完成签到，获取每日奖励。
+GitHub Actions 使用 Playwright Chromium 和 Xray 代理登录完成签到；支持多个账号、Ubuntu / macOS / Windows、账号独立代理与基本浏览器配置，全部结束后统一发送 Telegram / 企业微信通知。
 
-## ⚙️ 功能特性
+## 快速开始
 
-- ✅ 使用账号密码自动登录（登录即签到）
-- ✅ 多账号 / 多站点支持：`ACCOUNTS` 多行配置（可带站点前缀），逐账号顺序签到，汇总 Telegram 通知
-- ✅ 新模式：一个 `CHECKIN_CONFIG` 变量配置所有账号、系统、代理列表和通知
-- ✅ 固定系统分组：Ubuntu / Windows / macOS，每组最多 3 个账号
-- ✅ 每账号 1～N 个代理，支持订阅随机候选、全系统本轮不重复分配；按顺序尝试，首次成功后停止
-- ✅ 新模式通知显示上次成功余额、净变化、当前余额、站点用户组、出口国家及可点击的 IPPure 出口 IP 链接
-- ✅ 统一使用 Xray 内核；旧模式优先自有节点，失败自动回退免费代理池
-- ✅ 代理池 WAF 探测：随机抽样并发检测 IP 是否触发阿里云 WAF（按站点独立探测）
-- ✅ 所有分组结束后统一汇总到 Telegram / 企业微信群机器人（均可选）
-- ✅ GitHub Actions 自动运行（每天北京时间 06:45；实际启动可能受平台调度延迟影响）
-
-## Cloudflare 随机触发（可选）
-
-`cloudflare/` 是独立的 Worker 触发器，可在 Cloudflare 连接本 GitHub 仓库部署。一个 Worker 支持多个 GitHub 仓库，每个目标、每个北京时间日期分别在 01:00～23:00 独立抽取时间；GitHub 仍负责多系统登录及最终通知，Actions 不提前启动等待。
-
-部署步骤和完整变量说明见 **[Cloudflare 部署手册](cloudflare/README.md)**。连接现有仓库时选择 `main` 分支、根目录 `cloudflare`、构建命令 `npm test`、部署命令 `npm run deploy`。Worker 和 SQLite Durable Object、Cron 随代码配置部署；`TRIGGER_CONFIG` 及 GitHub Token 在 Cloudflare 的运行时 Variables & Secrets 中设置，未配置时不会触发签到。
-
-[部署 Cloudflare 触发器模板](https://deploy.workers.cloudflare.com/?url=https://github.com/yidu456/AgentRouter-Check-in/tree/main/cloudflare)（公共仓库适用；仅复制触发器子目录到新仓库，不复制 Python 签到项目）。连接 GitHub 用于代码部署，不等于授权启动 GitHub Actions，仍需配置目标仓库限定的 Token。
-
-**当前发布分支是 main。** 连接原签到仓库时，在 Worker 的 **Settings → Build → Branch control** 中选择 `main`；按钮新建的独立触发器仓库则可以正常使用 `main`、根目录留空。Cloudflare 构建分支与目标 Actions 的 `ref` 是两处设置，不要混用。详见 [分支选择与已有 Worker 修正步骤](cloudflare/README.md) 和 [GitHub / Cloudflare API Token 完整指南](cloudflare/API-TOKENS.md)。
-
-正式启用前须分别关闭各目标仓库默认分支旧的 `on.schedule`，保留 `workflow_dispatch`；本功能不自动修改默认分支，也不保证平台准点启动。
-
-部署后普通 `/` 只显示 `hello world`，固定 `/token` 是管理入口；鉴权后才显示配置状态和仓库，`/health` 也需鉴权。打开页面不触发签到。可设置 Secret `WECOM_WEBHOOK_URL` 接收调度通知，“已受理”不等于签到成功。实际域名从 Cloudflare Domains & Routes 复制。
-
-可选管理页：设置独立 Secret `DEBUG_ACCESS_TOKEN` 后，打开 `https://你的Worker域名/token` 输入访问 Token（或 `/token#token=访问Token` 快捷进入）。可持久开启/关闭单个目标、查看下次北京时间、确认后手动触发，以及查看/删除最近 20 条调度日志。复用已有 SQLite Durable Object，不需要额外 D1；不配置访问 Token 就关闭管理功能，原自动调度不受影响。配置与安全边界见 [管理页说明](cloudflare/README.md#管理页与数据库可选)。
-
-## 推荐配置：一个变量配置所有账号
-
-完整字段表、可填写的值、默认值、各协议节点示例和排错说明见 **[CHECKIN_CONFIG 详细配置手册](docs/configuration.md)**。不要将 Xray 内核 JSON 或 Clash YAML 直接放进这个变量。
-
-在仓库 **Settings → Secrets and variables → Actions** 添加 Secret：`CHECKIN_CONFIG`，内容为 JSON。下面均为虚构示例，需要替换；没有使用的通知渠道可以删掉，`notifications` 也可省略。
+1. Fork 本仓库并同步最新 `main`，在 **Actions** 启用工作流。
+2. 在 **Settings → Secrets and variables → Actions** 新建 **Secret `CHECKIN_CONFIG`**，填写以下 JSON 并替换虚构账号和代理。
+3. 打开 **Actions → Ayrouter Daily Check-in → Run workflow**。这会真实登录并可能发送通知；请先核对配置。
+4. 最终汇总在 `notify` 任务。默认 GitHub 定时为北京时间 **06:45**，平台可能延迟；随机启动见下节 Cloudflare。
 
 ```json
 {
-  "version": 1,
-  "subscription_url": "https://subscription.example.com/example",
-  "notifications": {
-    "telegram": {
-      "bot_token": "example-token",
-      "chat_id": "example-chat"
+  "version": 2,
+  "groups": {
+    "ubuntu": {
+      "accounts": [
+        {
+          "id": "ubuntu01",
+          "username": "user1@example.com",
+          "password": "example-secret-one",
+          "proxies": [{"link": "socks5://proxy1.example.com:1080"}]
+        }
+      ]
     },
-    "wecom": {
-      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=example-key"
-    }
+    "macos": {
+      "accounts": [
+        {
+          "id": "mac01",
+          "username": "user2@example.com",
+          "password": "example-secret-two",
+          "proxies": [{"link": "socks5://proxy2.example.com:1080"}],
+          "profile": {"viewport": {"width": 1440, "height": 900}, "locale": "zh-CN"}
+        }
+      ]
+    },
+    "windows": {"accounts": []}
   },
-  "accounts": [
-    {
-      "id": "a01",
-      "site": "https://agentrouter.org",
-      "username": "user1@example.com",
-      "password": "example-secret:with-colon",
-      "os": "ubuntu",
-      "proxies": [{"node": "node-a"}, {"node": "node-b"}],
-      "profile": {
-        "viewport": {"width": 1440, "height": 900},
-        "screen": {"width": 1440, "height": 900},
-        "device_scale_factor": 1,
-        "locale": "zh-CN",
-        "timezone_id": "Asia/Shanghai",
-        "color_scheme": "light"
-      }
-    },
-    {
-      "id": "a02",
-      "username": "user2@example.com",
-      "password": "example-secret-two",
-      "os": "macos",
-      "proxies": [{"link": "socks5://proxy.example.com:1080#dedicated-node"}]
-    },
-    {
-      "id": "a03",
-      "username": "user3@example.com",
-      "password": "example-secret-three",
-      "os": "windows",
-      "proxies": [{"node": "node-c"}]
-    }
-  ]
+  "notifications": {
+    "wecom": {"webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=example-key"}
+  }
 }
 ```
 
-### 账号和代理规则
+不用的 OS 组或通知渠道可以删除。每组可放多个账号，每个账号必须有自己的 1～N 个代理，首次成功后停止尝试；不回退免费节点或直连。`version:1` 的顶层 `accounts` + 每账号 `os` 格式仍兼容。
 
-- 每个账号的 `id` 必须唯一，以字母开头、最多 32 个字母/数字/下划线/短横线；请勿把邮箱或密钥作为 ID，它会显示在任务和通知中。
-- `os` 只能为 `ubuntu`、`windows`、`macos`，对应固定标签 `ubuntu-24.04`、`windows-2022`、`macos-15`（ARM64）。`macos-14` 已退役，不再使用。同系统账号按 ID 排序，每组最多 3 个；不同分组使用独立 Runner。同一账号不会每天随机更换系统。
-- `site` 可省略，默认 `https://agentrouter.org`。JSON 密码完整保留，包括冒号、竖线和两端空格。
-- `proxies` 必须配置 1～N 个候选。每个候选只写 `node`、`link` 或 `random` 中的一项，不能同时写。`node` 使用共用订阅中的节点名称；`link` 为完整节点分享链接，无须订阅。只使用直接链接时可省略 `subscription_url`。
-- 订阅名称来自分享链接的 `#名称`（URL 解码后），VMess 可使用 `ps`；配置了 `node` 引用时，订阅重名节点会被拒绝；纯随机配置不依赖名称。节点引用、相同直接链接不能重复分配给多个账号。
-- `{"random": 2}` 表示从顶层 `subscription_url` 分配两个随机候选；可混合固定节点，固定绑定先排除。全账号、跨系统/分组本轮不重复分配；每轮重新抽取，候选不足或有效池改变报 `RANDOM_POOL_FAIL`，不临时重抽/共享。订阅命名和排序可变，但仍需链接列表格式。
-- 每次从列表第一个候选开始，失败后关闭浏览器并尝试该账号下一个候选。首次成功即停止，不会为了遍历代理再次登录。全部失败只影响该账号，不使用未配置节点、免费代理或直连。
-- 每次失败会输出 `账号ID attemptN: 安全阶段码`；已尝试的候选全部失败时，报告保留最后一次失败阶段，而不是一律覆盖成 `PROXY_LIST_EXHAUSTED`。没有可尝试候选时仍使用该汇总码。导航失败只输出白名单内的 Chromium 网络错误码，不输出原始异常、URL 或节点信息。
-- 当前支持明文/base64/base64url 的节点链接订阅及 vless、vmess、trojan、hysteria2/hy2、socks5/socks。不是任意 Clash YAML / sing-box JSON 订阅都能解析；不支持的节点会报告失败，不会静默降级 TLS。
-- Hysteria2 的 Salamander 混淆密码至少需要 4 个 UTF-8 字节；不兼容配置会提前拒绝，避免影响同组其他候选。
-- VLESS WebSocket 支持 `ed` Early Data，转换为 Xray 的路径 `ed` 参数；`eh` 仅支持 Xray 固定的 `Sec-WebSocket-Protocol`。路径中的 `ed` 与外层参数冲突、启用 Early Data 却指定空/自定义头、Reality + WebSocket 等不能正确转换的组合会明确失败，不会静默忽略。保留其余路径查询、Host、SNI 和明确配置的证书校验策略。VLESS 用户 ID 必须是有效完整 UUID，不能使用截断后的脱敏值；请从客户端复制完整节点链接。
-- `profile` 可省略：默认 1440×900、像素比例 1、`zh-CN`、`Asia/Shanghai`、浅色。可固定视口/屏幕、像素比例 1/2、语言 `zh-CN`/`en-US`、时区 `Asia/Shanghai`/`Asia/Tokyo`/`America/New_York`/`Europe/London` 和 `light`/`dark`。
-- 使用真实系统 Chromium 的默认 UA，不在 Linux 上伪装 macOS。不同节点不保证不同出口 IP；基本配置固定也不代表完整硬件指纹固定或账号不可关联。
-- 登录入口已适配公开页面的“使用 邮箱或用户名 登录”和英文入口，允许空格/换行差异；就绪检查与点击共用匹配规则，不再把导航栏里的普通“登录”当作邮箱入口。仍不保证适配所有第三方登录页面或绕过 WAF。
+完整字段、订阅随机节点、协议链接、固定 profile 和可选网站管理 API 凭据见 **[配置手册](docs/configuration.md)**。不要填写 Clash YAML、Xray 内核配置，也不要把真实凭据提交到仓库。
 
-### 最终汇总通知
+## Cloudflare 随机触发与管理
 
-全部系统分组成功、失败或超时结束后，`notify` 任务才汇总发送；账号和分组执行期间不发送消息。缺失或损坏的报告计入失败，不会默认为成功。新模式汇总包含公开 ID、系统、上次成功余额、净变化、当前余额、实测代理出口 IP 和安全状态码，不包含密码、代理链接或响应详情。净变化可能包含消费/充值，不等于签到奖励；初次/丢失历史显示未知，登录失败不覆盖成功基线。
+Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个仓库目标、每个日期独立抽取北京时间 **01:00～23:00**，Actions 不提前启动等待。支持多个 GitHub owner，需分别配置 PAT。
 
-新模式从完整校验后的配置确定预期分组；即使汇总清单下载失败，也能按预期账号恢复汇总。旧模式无法恢复清单时，只发送安全的清单异常通知。所有分支共用一个签到并发锁，避免默认分支定时任务与开发分支手动任务同时登录同一批账号。
+按 **[Cloudflare 部署指南](cloudflare/README.md)** 完成：
 
-工作流按 `prepare → plan → checkin → notify` 执行。读取凭据的 `prepare` 只上传安全清单，不发送跨任务输出；独立的 `plan` 不引用账号 Secrets，矩阵只含系统和数字槽位。账号 ID 在签到任务内从清单校验后读取，避免完整配置与矩阵输出重叠而被 GitHub 的 Secrets 保护丢弃。矩阵缺失时不会启动登录，最终汇总仍将缺失的账号报告计入失败。
+1. Workers Builds 连接自己的仓库：生产分支 `main`，Root directory `cloudflare`，Build `npm test`，Deploy `npm run deploy`。
+2. Worker 运行时设置 `TRIGGER_CONFIG`、GitHub PAT；不要填在 Build variables。令牌创建步骤见 **[令牌指南](cloudflare/API-TOKENS.md)**。
+3. 设置 `DEBUG_ACCESS_TOKEN`（隐藏入口值）、`ADMIN_USERNAME` 和 `ADMIN_PASSWORD`。`/` 只有 `hello world`，打开 **`/<入口值>`** 用用户名密码登录，不是固定 `/token`。
+4. 管理页分为 **仓库管理 / 配置检查 / 运行日志**，分别显示操作和下次时间、错误字段与建议、按仓库分类的调度记录。
+5. 准备启用 Cloudflare 时，删除各目标默认分支旧 `on.schedule`，保留 `workflow_dispatch`，否则两套定时都可能运行。项目不会自动删除你的 Cron。
 
-余额历史由最终任务按分支保存到 Actions 缓存，本地新模式保存在 `.superpowers/checkin-history/balances.json`；仅记录身份摘要和整数余额，不保存密码或 IP。摘要不保证匿名，缓存/artifact/机器人接收者仍可能看到或关联余额和活动。出口 IP 通过实际使用代理查询；失败显示未获取，不直连，不影响登录。轮转/分流代理可能使站点实际看到不同 IP。详见配置手册第 12 节。
+新目标默认开启；明确 `enabled:false` 和已有数据库关闭状态不重置。手动运行需要确认，日志删除不改变日程。Worker 企业微信通知仅说明 GitHub 是否受理触发，不是 Actions 已完成或签到成功。
 
-新模式从已有用户接口读取 `data.group`，不额外登录；字段缺失显示未获取。国家通过无需密钥的 IPWHOIS HTTPS 服务在最终汇总时查询，只发送出口 IP，同一 IP 本轮只查一次；禁用通知时不查询。国家信息不是实际节点所在地的保证，限流/错误不影响签到。Telegram 使用 HTML、企业微信使用 Markdown，让出口 IP 直接链接到 IPPure 查询页；Telegram 关闭链接预览。国家和用户组不写入余额历史，用户组会进入短期结果 artifact。
+## 成功与余额怎么理解
 
-企业微信使用普通**群机器人 Webhook**：在群内创建机器人，将完整地址放入 `notifications.wecom.webhook_url`。Telegram 使用 `notifications.telegram.bot_token` 和 `chat_id`。可配置任意一个、两个或都不配置。
+“登录成功”必须来自网站的登录/当前用户身份验证，不是脚本退出码，也不能仅凭额度字段推断。余额读取失败与登录失败分开显示。
 
-消息超限时，**同一最终汇总**分段发送，不代表中途通知。企业微信按 2048 UTF-8 字节分段并限速；Telegram 保留 HTML 格式并按保守长度分段。发送失败不重复尝试，以免超时后重复推送；一个渠道失败不阻止另一个。
+- **上次余额**来自上次成功取得并保存的额度；**余额变化**是本次余额减上次余额，是两次观测间的净变化，不保证全部为签到奖励。
+- 历史只保存匿名身份键与额度，通过 Actions cache 跨运行恢复。首次运行、身份改变、缓存缺失/清理或读写失败时不能倒推出上次余额，会明确提示原因；保留稳定 `id`、`site`、`username`。
+- 默认复用浏览器登录态读取网站用户信息，不需要另配 API 密钥。可选网站账户管理 token 只补充已确认账号的余额，不替代登录，不使用模型调用 `sk-` Key。
+- 用户分组优先读取网站返回字段；出口国家/IP 来自代理出口探测，失败不影响登录，IP 可点击到 IPPure。
 
-如果整个 JSON 无法解析，程序不会从不完整配置提取机器人密钥，也不会混用旧变量；此时可能只能通过 GitHub 任务失败状态和安全日志发现错误。
+如历史持续不可用，查看 `notify` 中历史 restore/save 步骤的安全状态码，不要发密钥或原始响应。
 
-### 启用与验证
+## 常见错误
 
-新模式有配置错误就失败，不与下面的旧变量混用。删除/清空 GitHub Secret `CHECKIN_CONFIG` 会重新使用旧模式，包括旧模式的免费代理/直连兜底。单个 Secret 最大 48 KiB；所有接收它的任务都能读取其中全部凭据，这不是互不信任任务之间的凭据隔离。不要提交配置到仓库，也不要在外部 PR 上运行带 Secrets 的任务。
+| 状态 | 含义 / 检查方向 |
+| --- | --- |
+| `ROUTE_CONFIG_FAIL` | CHECKIN_CONFIG 格式或字段不合法，按配置手册核对 |
+| `NODE_CONFIG_FAIL` | 节点协议/参数无法转换为当前 Xray 支持配置 |
+| `PROXY_LIST_EXHAUSTED` | 此账号所有候选不可用；先检查链接、节点出口和订阅 |
+| `FORM_NOT_FOUND` | 未找到登录表单，可能页面结构、WAF 或加载异常 |
+| `LOGIN_UNVERIFIED` / `USER_API_FAIL` | 无法取得可信登录/身份证据，不当作成功 |
+| `AUTH_IDENTITY_MISMATCH` | 返回身份与本次登录身份不匹配，不使用该余额 |
+| Cloudflare 入口 404 / JSON 错误 | 核对运行时变量和最新部署，在配置栏查看建议 |
 
-依赖基线：Python 3.11、Playwright 1.64.1、Xray 26.1.23（按系统下载官方 ZIP 并核对固定 SHA-256），新旧模式使用同一内核。Windows/macOS Runner 的额度、计费和可用并发取决于仓库及 GitHub 套餐；版本化 Runner 标签不保证每次分配同一台电脑。
+不要根据“登录成功”推断奖励到账；确认当前余额和历史观测差额。固定基本 profile 不等于完整硬件指纹，Runner、Chromium版本、字体、GPU/IP信誉仍可能变化，也不保证账号完全无关联。
 
-**内核版本与 TLS 风险：** 为兼容链接中明确配置的 `allowInsecure=1`，固定到仍支持该字段的 Xray 26.1.23；它不是最新版，后续版本已移除此字段。默认仍验证证书，不会自动开启不安全模式；显式关闭校验会失去服务端身份验证。较旧内核缺少后续修复，不应视为安全更新基线。子进程强制设置 `GODEBUG=multipathtcp=0` 以禁用旧内核涉及的 MPTCP 路径；不提供受已知 Hy2/gRPC 证书固定问题影响的 CA 固定配置。建议使用有效证书、删除不安全参数后再升级内核，而不是长期依赖该兼容版本。
+## 旧配置与本地验证
 
-先在 Actions 手动运行 **Credential-free platform smoke**，它只使用本地模拟网页、临时代理和虚构凭据验证三个系统，不会读取 Secrets。然后再运行 **Ayrouter Daily Check-in** 做实际签到。定时任务只使用仓库默认分支的工作流；开发分支上的改动需要按正常流程集成后才影响日常计划任务。
+旧模式仍支持 `ACCOUNTS`（如 `https://agentrouter.org|user@example.com:example-secret`）或 `USERNAME` / `PASSWORD`，以及 `TG_BOT_TOKEN` / `TG_CHAT_ID`。非空 `CHECKIN_CONFIG` 不与旧变量混用；严格独立代理请使用新模式，不要清空 Secret 来绕过错误。
 
-本地检查（Python 3.11 虚拟环境）：
+本地使用 Python 3.11 或更新：
 
 ```sh
 python -m pip install requests playwright==1.64.1 pynacl pysocks
-python -m unittest discover -s tests -v
-python -m py_compile app.py routing.py proxy_runtime.py legacy_proxy.py report.py subscription_pool.py account_observations.py
-bash -n setup-proxy.sh
 python -m playwright install chromium
-python tests/smoke.py
+python -m unittest discover -s tests
+python -m py_compile app.py routing.py report.py
+bash -n setup-proxy.sh
+npm ci --prefix cloudflare
+npm test --prefix cloudflare
+npm run check --prefix cloudflare
 ```
 
-本地运行 `app.py` 会执行真实登录；新模式的本地账号必须全部匹配本机系统，多系统配置应通过 Actions 执行。`setup-proxy.sh` 通过 `legacy_proxy.py` 复用同一 Xray 下载、解析与启动逻辑，仍仅供旧 Linux/Actions 路径，不是 Windows 启动器。只保留选中节点的子进程；失败时仅停止自己启动的进程，不清理其他进程或占用端口。
-
-## 旧变量兼容模式
-
-下面的旧教程仅在未设置 `CHECKIN_CONFIG` 时适用；依旧使用单个 Ubuntu 任务。
-
-## 🚀 快速开始
-
-### 1. Fork 本仓库
-
-点击右上角 **Fork** 按钮，将仓库复制到你的账号下。
-
-### 2. 配置 Secrets
-
-前往仓库的 **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，添加以下配置：
-
-#### 必须配置（二选一）：
-
-**方式一：多账号 / 多站点**
-
-| Name | Value | 说明 |
-|------|-------|------|
-| `ACCOUNTS` | 多行文本 | 每行一个账号，格式 `[站点URL\|]邮箱:密码`，可配置任意多个账号、任意多个站点 |
-
-> **示例**（Secret 值中直接换行）：
-> ```
-> https://agentrouter.org|user1@qq.com:Pass1234
-> user2@gmail.com:Abcd5678
-> https://example.com|user3@qq.com:Ab:cd
-> ```
-> - 站点前缀可省略，省略时默认 `https://agentrouter.org`
-> - 站点与账号用 `\|` 分隔，密码中可包含冒号
-> - 仅兼容 new-api 系站点（登录页与 AgentRouter 同款、有邮箱登录入口）
-> - Telegram 通知中站点域名会打码（如 `agen***`），不会完整暴露
-
-**方式二：单账号**
-
-| Name | Value | 说明 |
-|------|-------|------|
-| `USERNAME` | 你的邮箱 | AgentRouter 登录邮箱 |
-| `PASSWORD` | 你的密码 | AgentRouter 登录密码 |
-
-#### 代理配置（可选，二选一或都不配）：
-
-| Name | Value | 说明 |
-|------|-------|------|
-| `NODE_LINK` | 单节点链接或订阅 URL | 优先使用的自有干净节点（vmess/vless/trojan/hysteria2/socks5） |
-| `PROXY_CONFIG_URL` | 订阅地址 URL | `NODE_LINK` 为空时的备用订阅地址 |
-
-> **代理工作逻辑**：
-> 1. **通道一（优先）**：配置了 `NODE_LINK` / `PROXY_CONFIG_URL` 时，脚本通过 [Xray](https://github.com/XTLS/Xray-core) 启动自有节点，直接登录
-> 2. **通道二（兜底）**：自有节点未配置或登录失败时，自动从 [freeproxy](https://github.com/CharlesPikachu/freeproxy) 代理池随机抽取 100 个 IP，50 线程并发访问登录页检测是否触发阿里云 WAF；凑够 3 个干净 IP 或扫满 5 轮（500 个）为止
-> 3. 日志中会对使用的代理 IP 打码（如 `124.248.***.***:1080`）
----
-#### Telegram 通知（可选）：
-
-| Name | Value | 说明 |
-|------|-------|------|
-| `TG_BOT_TOKEN` | Bot Token | 从 [@BotFather](https://t.me/BotFather) 获取 |
-| `TG_CHAT_ID` | Chat ID | 你的 Telegram Chat ID |
-
-### 3. 启用 GitHub Actions
-
-1. 前往仓库的 **Actions** 标签页
-2. 点击 **I understand my workflows, go ahead and enable them**
-3. 脚本将在每天北京时间 06:45 自动运行
-
-### 4. 手动测试运行
-
-前往 **Actions** → 选择 **Ayrouter Daily Check-in** → 点击 **Run workflow**
-
-## 📋 工作原理
-
-1. **登录即签到**：AgentRouter 及同类 new-api 站点的签到机制是"登录即完成签到"
-2. **浏览器自动化**：使用 Playwright 模拟真实浏览器登录
-3. **多账号 / 多站点循环**：多个账号逐个顺序签到，单个账号失败不影响其他账号；任一失败时 Actions 退出码为 1
-4. **双通道代理**：优先自有节点；未配置或失败时从免费代理池并发探测无 WAF 干净 IP 兜底（探测结果按站点共享轮换使用）
-5. **每日自动运行**：GitHub Actions 定时任务
-
-## ⚠️ 关于 WAF 验证
-
-AgentRouter 使用了阿里云 WAF，在以下情况会触发滑块验证：
-- GitHub Actions 等云服务 IP
-- 数据中心 IP
-- 频繁请求的 IP
-
-**解决方案**：
-1. ✅ **推荐**：配置自有干净节点（`NODE_LINK`），稳定可靠
-2. ✅ **兜底**：免费代理池多轮抽样探测（成功率取决于池子质量）
-
-## 🛠️ 常见问题
-
-### Q: 如何获取 Telegram Chat ID？
-A:
-1. 向 [@userinfobot](https://t.me/userinfobot) 发送任意消息
-2. Bot 会返回你的 Chat ID
-
-### Q: 脚本运行失败怎么办？
-A:
-1. 查看 Actions 运行日志
-2. 检查是否配置了代理
-3. 确认账号密码是否正确
-### Q: 其他平台授权登陆如何获取账号密码？
-1.授权登入后 进入[个人主页](https://agentrouter.org/console/personal)
-
-2.按照图片指示绑定邮箱
-
-3.退出登陆 再通过邮箱登陆 第一次登陆的时候需要选择忘记密码 然后通过邮箱来重置密码
-
-4.确认重置之后 会发邮件到指定的邮箱里面 里面会包含重置后的密码 拿到重置后的密码和邮箱 按照教程填写即可
-<img width="2276" height="1415" alt="cac64968dbc60bfa3a90f288da42b6e9" src="https://github.com/user-attachments/assets/eb0d7d10-ecfa-468e-9905-b18eb34594d3" />
-
-<img width="2263" height="1415" alt="image" src="https://github.com/user-attachments/assets/69db98ab-045c-458f-a4b0-8323310ffa64" />
-
-<img width="2263" height="1415" alt="cff6a3d85c2f200756706920940474ba" src="https://github.com/user-attachments/assets/42860695-2306-4df2-b87d-614c979b690d" />
-
-<img width="2263" height="1415" alt="3d64114db0c8512b25afe0230a969a2c" src="https://github.com/user-attachments/assets/85d92b3f-b06c-4236-9d5b-cbd04331ed14" />
-
-
-## 📜 更新日志
-
-- **2026-08-30**: 支持多站点（`ACCOUNTS` 行可带站点前缀，仅限 new-api 系站点），代理池按站点独立探测
-- **2026-08-30**: 支持多账号（`ACCOUNTS` 多行配置），逐账号签到 + 汇总通知
-- **2026-08-29**: 新增免费代理池兜底通道（并发 WAF 探测、多轮抽样、IP 日志打码）
-- **2026-08-07**: 添加代理支持，绕过 WAF 验证
-- **2026-08-07**: 改为账号密码登录模式
-- **2026-08-06**: 初始版本
-
-## 🙏 致谢
-
-- [CharlesPikachu/freeproxy](https://github.com/CharlesPikachu/freeproxy) —— 感谢作者提供的免费代理池服务，本脚本的兜底代理通道基于该项目公开的代理数据
-
-## 📄 许可证
-
-MIT License
+测试模拟网络和浏览器；`python app.py`、Actions Run workflow、管理页手动运行会产生真实业务请求，不能当作无副作用语法测试。Cloudflare dry-run 只打包，不部署。

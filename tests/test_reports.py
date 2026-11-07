@@ -83,7 +83,6 @@ class WriteReportTests(unittest.TestCase):
             [result(quota=True)],
             [result(quota=1.5)],
             [result(quota=math.nan)],
-            [result(quota=None)],
             [result(quota=1, stage="WAF_TIMEOUT")],
             [result(quota=None, stage=[])],
             [result(quota=None, stage="exception: credential-marker")],
@@ -235,7 +234,6 @@ class CombineReportTests(unittest.TestCase):
             dict(valid_base, results=[result("a01")]),
             dict(valid_base, results=[dict(result("a01"), secret="credential-marker"), result("a02", None, "WAF_TIMEOUT")]),
             dict(valid_base, results=[result("a01", True), result("a02", None, "WAF_TIMEOUT")]),
-            dict(valid_base, results=[result("a01", None), result("a02", None, "WAF_TIMEOUT")]),
             dict(valid_base, results=[result("a01"), result("a02", 1, "WAF_TIMEOUT")]),
         ]
         expected = [

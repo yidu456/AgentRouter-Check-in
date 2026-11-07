@@ -1,6 +1,6 @@
 import { parseConfig, tokenFor } from "./config.mjs";
 import { wecomState } from "./wecom.mjs";
-import { adminState, adminGate } from "./admin.mjs";
+import { adminState, adminGate, loginState } from "./admin.mjs";
 import { adminShell } from "./admin-ui.mjs";
 
 export function configurationStatus(env = {}) {
@@ -39,33 +39,33 @@ export function configurationStatus(env = {}) {
     return status;
 }
 
-function tokenPage() {
+function tokenPage(env) {
     return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>AgentRouter - 仓库管理</title>
 <style>body{margin:0;background:radial-gradient(ellipse at 80% 0%,#cce8eb,transparent 55%),#eef6f7;color:#17383f;font:16px/1.7 "Microsoft YaHei","PingFang SC",sans-serif} [hidden]{display:none!important}
 .access{max-width:460px;margin:80px auto;padding:28px;background:#fff;border:1px solid #cbdcdf;border-radius:10px}.access h1{font:28px "Songti SC",SimSun,serif}.access input{display:block;box-sizing:border-box;width:100%;padding:12px;margin:10px 0 16px;border:1px solid #8ba9af;border-radius:5px;font:inherit}.access button{padding:10px 18px;border:0;border-radius:5px;background:#164e59;color:#fff;font:inherit}.access small{display:block;color:#536d74}.access :focus-visible{outline:3px solid #087579;outline-offset:3px}@media(max-width:520px){.access{margin:30px 16px;padding:22px}}</style></head><body>
-<section class="access" data-public-view><h1>仓库管理</h1><p>请输入独立的管理访问 Token。</p>
-<form data-access-form><label for="access-token">访问 Token</label><input id="access-token" type="password" data-access-input autocomplete="off" spellcheck="false" required maxlength="128"><button type="submit" data-access-submit>进入管理</button></form>
-<p data-access-feedback role="status" aria-live="polite">仅验证访问权限，不会运行签到。</p><small>Token 仅保存在本页内存，不写入浏览器存储。</small><noscript>需要启用 JavaScript 才能加载管理页面。</noscript></section>
+<section class="access" data-public-view><h1>仓库管理</h1><p>使用管理员用户名和密码登录。</p>
+<form data-access-form><label for="access-user">用户名</label><input id="access-user" type="text" data-access-username autocomplete="off" spellcheck="false" required maxlength="64"><label for="access-secret">密码</label><input id="access-secret" type="password" data-access-input autocomplete="off" required minlength="12" maxlength="256"><button type="submit" data-access-submit>登录管理</button></form>
+<p data-access-feedback role="status" aria-live="polite">${loginState(env) === "configured" ? "仅验证访问权限，不会运行签到。" : "登录配置缺失或不合法，请在 Cloudflare 配置 ADMIN_USERNAME 和 ADMIN_PASSWORD 后保存部署。"}</p><small>凭据仅在本页内存中使用，通过 HTTPS 验证，不写入浏览器存储。隐藏入口不是登录密码。</small><noscript>需要启用 JavaScript 才能加载管理页面。</noscript></section>
 ${adminShell()}<script src="/admin/client.js"></script></body></html>`;
 }
 
 export async function statusResponse(request, env) {
     const path = new URL(request.url).pathname;
+    const entry = adminState(env) === "configured" && path === `/${env.DEBUG_ACCESS_TOKEN}`;
     const headers = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
         "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
         "Content-Security-Policy": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" };
-    if (!["/", "/token", "/health"].includes(path)) return new Response(null, { status: 404, headers });
-    if (path === "/token" && adminState(env) !== "configured") return new Response(null, { status: 404, headers });
+    if (!["/", "/health"].includes(path) && !entry) return new Response(null, { status: 404, headers });
     if (path === "/health") {
         const denied = await adminGate(request, env);
         if (denied) return denied;
     }
     if (!["GET", "HEAD"].includes(request.method))
         return new Response(null, { status: 405, headers: { ...headers, Allow: "GET, HEAD" } });
-    if (path === "/token") headers["Content-Security-Policy"] += "; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'";
+    if (entry) headers["Content-Security-Policy"] += "; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'";
     headers["Content-Type"] = path === "/" ? "text/plain; charset=utf-8" : path === "/health" ? "application/json; charset=utf-8" : "text/html; charset=utf-8";
     const body = request.method === "HEAD" ? null : path === "/" ? "hello world"
-        : path === "/health" ? JSON.stringify(configurationStatus(env)) : tokenPage();
+        : path === "/health" ? JSON.stringify(configurationStatus(env)) : tokenPage(env);
     return new Response(body, { headers });
 }

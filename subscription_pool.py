@@ -163,7 +163,7 @@ def load_pool(url, require_names=False):
 
 
 def _context(config, named_links, nodes):
-    from routing import DEFAULT_PROFILE, DEFAULT_SITE, parse_config
+    from routing import _normalize_config
     from proxy_runtime import parse_node_link
 
     source = copy.deepcopy(config)
@@ -172,21 +172,7 @@ def _context(config, named_links, nodes):
     # Normalized routing configs include an empty optional subscription URL.
     if source.get("subscription_url") == "":
         source.pop("subscription_url")
-    # Do not charge expanded defaults or ASCII escaping against the raw byte limit.
-    for account in source.get("accounts", []):
-        if account.get("site") == DEFAULT_SITE:
-            account.pop("site")
-        profile = account.get("profile")
-        if isinstance(profile, dict):
-            for field, default in DEFAULT_PROFILE.items():
-                if field != "screen" and field in profile and _canonical(profile[field]) == _canonical(default):
-                    profile.pop(field)
-            inherited_screen = profile.get("viewport", DEFAULT_PROFILE["screen"])
-            if "screen" in profile and _canonical(profile["screen"]) == _canonical(inherited_screen):
-                profile.pop("screen")
-            if not profile:
-                account.pop("profile")
-    validated = parse_config(json.dumps(source, ensure_ascii=False, allow_nan=False, separators=(",", ":")))
+    validated = _normalize_config(source)
     if not isinstance(nodes, list) or not isinstance(named_links, dict):
         _fail()
     pool = {}

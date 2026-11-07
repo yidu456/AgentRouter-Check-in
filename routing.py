@@ -200,6 +200,21 @@ def _notifications(value):
     return result
 
 
+def _api(value):
+    if not isinstance(value, dict) or set(value) != {"access_token", "user_id"}:
+        _fail()
+    token, user_id = value["access_token"], value["user_id"]
+    if (
+        not isinstance(token, str)
+        or not 1 <= len(token) <= 4096
+        or any(not 0x21 <= ord(char) <= 0x7E for char in token)
+        or type(user_id) is not int
+        or not 1 <= user_id <= 2 ** 53 - 1
+    ):
+        _fail()
+    return {"access_token": token, "user_id": user_id}
+
+
 def _direct_link(value):
     if not _nonempty_string(value) or value != value.strip():
         _fail()
@@ -305,16 +320,41 @@ def parse_config(raw: str) -> dict:
         if not isinstance(raw, str) or not raw.strip() or len(raw.encode("utf-8")) > MAX_CONFIG_BYTES:
             _fail()
         value = json.loads(raw, object_pairs_hook=_unique_object, parse_constant=lambda _: _fail())
-        if not isinstance(value, dict) or set(value) - {
-            "version",
-            "subscription_url",
-            "notifications",
-            "accounts",
-        }:
+    except Exception:
+        _fail()
+    return _normalize_config(value)
+
+
+def _normalize_config(value: dict) -> dict:
+    # Internal revalidation must not charge inherited OS or expanded defaults as raw JSON.
+    try:
+        if not isinstance(value, dict):
             _fail()
-        if type(value.get("version")) is not int or value["version"] != 1:
+        version = value.get("version")
+        if type(version) is not int or version not in {1, 2}:
             _fail()
-        accounts = value.get("accounts")
+        account_field = "accounts" if version == 1 else "groups"
+        if set(value) - {"version", "subscription_url", "notifications", account_field}:
+            _fail()
+        if version == 1:
+            accounts = value.get("accounts")
+        else:
+            os_groups = value.get("groups")
+            if not isinstance(os_groups, dict) or set(os_groups) - RUNNERS.keys():
+                _fail()
+            accounts = []
+            for os_name in RUNNERS:
+                if os_name not in os_groups:
+                    continue
+                group = os_groups[os_name]
+                if not isinstance(group, dict) or set(group) != {"accounts"}:
+                    _fail()
+                if not isinstance(group["accounts"], list):
+                    _fail()
+                for source in group["accounts"]:
+                    if not isinstance(source, dict) or "os" in source:
+                        _fail()
+                    accounts.append({**source, "os": os_name})
         if not isinstance(accounts, list) or not accounts:
             _fail()
 
@@ -329,7 +369,7 @@ def parse_config(raw: str) -> dict:
         references = set()
         candidate_count = 0
         required = {"id", "username", PASSWORD_KEY, "os", "proxies"}
-        allowed = required | {"site", "profile"}
+        allowed = required | {"site", "profile", "api"}
         for source in accounts:
             if not isinstance(source, dict) or not required <= set(source) or set(source) - allowed:
                 _fail()
@@ -351,21 +391,23 @@ def parse_config(raw: str) -> dict:
             candidate_count += sum(candidate.get("random", 1) for candidate in proxies)
             if candidate_count > MAX_CANDIDATES:
                 _fail()
-            normalized_accounts.append(
-                {
-                    "id": account_id,
-                    "site": site,
-                    "username": username,
-                    PASSWORD_KEY: secret,
-                    "os": os_name,
-                    "proxies": proxies,
-                    "profile": _profile(source["profile"] if "profile" in source else {}),
-                }
-            )
+            normalized_account = {
+                "id": account_id,
+                "site": site,
+                "username": username,
+                PASSWORD_KEY: secret,
+                "os": os_name,
+                "proxies": proxies,
+                "profile": _profile(source["profile"] if "profile" in source else {}),
+            }
+            if "api" in source:
+                normalized_account["api"] = _api(source["api"])
+            normalized_accounts.append(normalized_account)
             ids.add(account_id)
             login_records.add(login_record)
 
         build_manifest(normalized_accounts)
+        # Runtime consumers and random-pool fingerprints keep the v1 account contract.
         return {
             "version": 1,
             "accounts": normalized_accounts,

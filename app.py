@@ -12,7 +12,7 @@ import json
 import platform
 import tempfile
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import requests
 from playwright.sync_api import sync_playwright, Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError
@@ -383,6 +383,11 @@ def format_notifications(results: list, success_count: int, total: int) -> tuple
                 delta = f"{(quota - previous) / 500000:+.2f}$"
             suffix = (f": {status}\n  上次余额：{before}\n  余额变化：{delta}"
                       f"\n  当前余额：{current}")
+            history_status = balance.get("history_status")
+            if history_status in {"MISSING", "INVALID", "READ_FAILED", "NO_BASELINE"}:
+                suffix += f"\n  历史基线：HISTORY_{history_status}"
+            if balance.get("history_saved") is False:
+                suffix += "\n  历史保存：HISTORY_SAVE_FAIL"
             group = balance.get("user_group") or "未获取"
             country = balance.get("country")
             country_label = f"{country['name']}（{country['code']}）" if country else "未获取"
@@ -403,8 +408,8 @@ def format_notifications(results: list, success_count: int, total: int) -> tuple
                                + f"\n  代理出口 IP：{markdown_ip}")
             continue
         elif balance is None:
-            suffix = f": 签到失败（{stage}）"
-            prefix = "❌ "
+            suffix = ": 登录成功；当前余额：未获取" if stage == "SUCCESS" else f": 签到失败（{stage}）"
+            prefix = "✅ " if stage == "SUCCESS" else "❌ "
         else:
             suffix = f": 余额 {balance}"
             prefix = "✅ "
@@ -1380,6 +1385,74 @@ def _first_visible_locator(
     return None
 
 
+def _valid_user_id(value):
+    return type(value) is int and 1 <= value <= 2**53 - 1
+
+
+def _url_origin(value):
+    parsed = urlsplit(value)
+    scheme = parsed.scheme.lower()
+    return scheme, parsed.hostname.encode("idna").decode("ascii").lower(), parsed.port or (443 if scheme == "https" else 80)
+
+
+def _login_evidence(payload, username):
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        return {}
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return {}
+    user = data.get("user", data)
+    if not isinstance(user, dict) or not _valid_user_id(user.get("id")):
+        return {}
+    names = [user.get(field) for field in ("username", "email") if user.get(field)]
+    if names and not any(isinstance(name, str) and name.casefold() == username.casefold() for name in names):
+        return {}
+    evidence = {"user_id": user["id"]}
+    token = data.get("access_token")
+    if isinstance(token, str) and 1 <= len(token) <= 4096 and all(33 <= ord(char) <= 126 for char in token):
+        evidence["access_token"] = token
+    return evidence
+
+
+def _browser_self(page, site, evidence):
+    parsed = urlsplit(site)
+    arguments = dict(evidence, origin=f"{parsed.scheme}://{parsed.netloc}")
+    return page.evaluate(
+        """
+        async ({origin, user_id, access_token}) => {
+            if (location.origin !== new URL(origin).origin) return {success: false};
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 15000);
+            try {
+                if (!user_id) {
+                    for (let attempt = 0; attempt < 10; attempt++) {
+                        const user = JSON.parse(localStorage.getItem('user') || 'null');
+                        if (Number.isSafeInteger(user?.id) && user.id > 0) {
+                            user_id = user.id;
+                            break;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                }
+                if (!Number.isSafeInteger(user_id) || user_id <= 0) return {success: false};
+                const headers = {'Accept': 'application/json', 'New-API-User': String(user_id)};
+                if (access_token) headers.Authorization = 'Bearer ' + access_token;
+                const response = await fetch('/api/user/self', {
+                    method: 'GET', headers, credentials: 'include', cache: 'no-store',
+                    redirect: 'error', signal: controller.signal
+                });
+                return {success: response.ok, status: response.status,
+                        user_id, payload: await response.json()};
+            } catch (_) {
+                return {success: false};
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+        """, arguments,
+    )
+
+
 def browser_login_complete(
     account: dict,
     proxy: dict | None = None,
@@ -1453,6 +1526,17 @@ def browser_login_complete(
             context = browser.new_context(**context_options)
 
             page = context.new_page()
+            login_evidence = {}
+
+            def observe_login(response):
+                try:
+                    if (response.request.method == "POST" and 200 <= response.status < 300
+                            and _url_origin(response.url) == _url_origin(account["site"])
+                            and urlsplit(response.url).path
+                            == urlsplit(account["site"]).path.rstrip("/") + "/api/user/login"):
+                        login_evidence.update(_login_evidence(response.json(), account["username"]))
+                except Exception:
+                    pass
 
             # ------------------------------------------------
             # Step 1：访问登录页
@@ -1689,6 +1773,8 @@ def browser_login_complete(
                         "FORM_NOT_FOUND"
                     )
 
+                # Capture only this submitted login, not unrelated requests during page initialization.
+                page.on("response", observe_login)
                 submit_locator.click(
                     timeout=5000
                 )
@@ -1726,201 +1812,49 @@ def browser_login_complete(
             # Step 6：获取用户信息
             # ------------------------------------------------
 
-            api_result = page.evaluate(
-                """
-                async () => {
+            api_result = _browser_self(page, account["site"], login_evidence)
+            user_data = None
+            if isinstance(api_result, dict) and api_result.get("success") is True:
+                payload = api_result.get("payload")
+                if isinstance(payload, dict) and payload.get("success") is True:
+                    user_data = payload.get("data")
+            authenticated_id = login_evidence.get("user_id")
+            if isinstance(user_data, dict):
+                requested_id = api_result.get("user_id")
+                returned_id = user_data.get("id")
+                if not _valid_user_id(returned_id) or not _valid_user_id(requested_id):
+                    raise _LoginStageError("LOGIN_UNVERIFIED")
+                if returned_id != requested_id or authenticated_id is not None and returned_id != authenticated_id:
+                    raise _LoginStageError("AUTH_IDENTITY_MISMATCH")
+                if authenticated_id is None:
+                    if not user_data.get("username") and not user_data.get("email"):
+                        raise _LoginStageError("LOGIN_UNVERIFIED")
+                    if not _login_evidence({"success": True, "data": user_data}, account["username"]):
+                        raise _LoginStageError("AUTH_IDENTITY_MISMATCH")
+                authenticated_id = returned_id
+            elif authenticated_id is None:
+                raise _LoginStageError("USER_API_FAIL")
 
-                    try {
-
-                        let userStr = null;
-
-                        for (
-                            let attempt = 0;
-                            attempt < 10;
-                            attempt++
-                        ) {
-
-                            userStr =
-                                localStorage.getItem(
-                                    'user'
-                                );
-
-                            if (userStr) {
-                                break;
-                            }
-
-                            await new Promise(
-                                resolve =>
-                                    setTimeout(
-                                        resolve,
-                                        500
-                                    )
-                            );
-                        }
-
-                        if (!userStr) {
-
-                            return {
-                                success: false,
-                                error: "USER_NOT_FOUND"
-                            };
-                        }
-
-                        const localUser =
-                            JSON.parse(
-                                userStr
-                            );
-
-                        if (!localUser.id) {
-
-                            return {
-                                success: false,
-                                error: "USER_ID_INVALID"
-                            };
-                        }
-
-                        const response =
-                            await fetch(
-                                '/api/user/self',
-                                {
-                                    method: 'GET',
-
-                                    headers: {
-                                        'Accept':
-                                            'application/json, text/plain, */*',
-
-                                        'New-API-User':
-                                            String(
-                                                localUser.id
-                                            )
-                                    },
-
-                                    credentials:
-                                        'include',
-
-                                    cache:
-                                        'no-store'
-                                }
-                            );
-
-                        let payload;
-
-                        try {
-
-                            payload =
-                                await response.json();
-
-                        } catch (err) {
-
-                            return {
-                                success: false,
-                                status:
-                                    response.status,
-                                error:
-                                    "INVALID_JSON"
-                            };
-                        }
-
-                        return {
-                            success:
-                                response.ok,
-
-                            status:
-                                response.status,
-
-                            payload
-                        };
-
-                    } catch (err) {
-
-                        return {
-                            success: false,
-                            error: "API_ERROR"
-                        };
-                    }
-                }
-                """
-            )
-
-            # ------------------------------------------------
-            # API 请求失败
-            # ------------------------------------------------
-
-            if not api_result.get(
-                "success"
-            ):
-
-                # 登录后拿不到用户信息，
-                # 通常是凭据错误或验证码拦截
-                raise _LoginStageError(
-                    "USER_API_FAIL"
-                )
-
-            payload = api_result.get(
-                "payload"
-            )
-
-            if (
-                not isinstance(
-                    payload,
-                    dict
-                )
-                or payload.get(
-                    "success"
-                ) is not True
-            ):
-
-                raise _LoginStageError(
-                    "API_PAYLOAD_FAIL"
-                )
-
-            user_data = payload.get(
-                "data"
-            )
-
-            if not isinstance(
-                user_data,
-                dict
-            ):
-
-                raise _LoginStageError(
-                    "API_PAYLOAD_FAIL"
-                )
-
-            # ------------------------------------------------
-            # 读取 quota
-            # ------------------------------------------------
-
-            quota = user_data.get(
-                "quota"
-            )
-
-            if (
-                isinstance(quota, bool)
-                or not isinstance(
-                    quota,
-                    (int, float)
-                )
-            ):
-
-                raise _LoginStageError(
-                    "QUOTA_INVALID"
-                )
-
-            # ------------------------------------------------
-            # 仅返回余额及经过校验的用户组，不返回其余账户资料。
-            #
-            # 不再返回：
-            # user_id
-            # username
-            # 账户
-            # 其他用户资料
-            # ------------------------------------------------
-
-            result = {
-                "quota": quota
-            }
-            if isolated:
+            quota = user_data.get("quota") if isinstance(user_data, dict) else None
+            if type(quota) is not int or not 0 <= quota <= 2**63 - 1:
+                quota = None
+            api = account.get("api")
+            if quota is None and isinstance(api, dict) and api.get("user_id") == authenticated_id:
+                fallback = _browser_self(page, account["site"], api)
+                payload = fallback.get("payload") if isinstance(fallback, dict) else None
+                if (isinstance(fallback, dict) and fallback.get("success") is True
+                        and isinstance(payload, dict) and payload.get("success") is True
+                        and isinstance(payload.get("data"), dict)):
+                    user_data = payload["data"]
+                    if user_data.get("id") != authenticated_id or not _valid_user_id(user_data.get("id")):
+                        raise _LoginStageError("AUTH_IDENTITY_MISMATCH")
+                    candidate_quota = user_data.get("quota")
+                    if type(candidate_quota) is int and 0 <= candidate_quota <= 2**63 - 1:
+                        quota = candidate_quota
+            result = {"quota": quota}
+            if quota is None:
+                result["authenticated"] = True
+            if isolated and isinstance(user_data, dict):
                 from account_observations import safe_user_group
 
                 group = safe_user_group(user_data.get("group"))
@@ -2137,10 +2071,16 @@ def _safe_login_result(result: dict | None, stage: str) -> tuple:
 
     if result is not None and not isinstance(result, dict):
         return None, "UNEXPECTED"
+    if not isinstance(stage, str) or stage not in STAGES:
+        return None, "UNEXPECTED"
+    if stage != "SUCCESS":
+        return None, stage
     if result:
         quota = result.get("quota")
         if type(quota) is int and 0 <= quota <= 2**63 - 1:
             return quota, "SUCCESS"
+        if quota is None:
+            return (None, "SUCCESS") if result.get("authenticated") is True else (None, "UNEXPECTED")
         return None, "QUOTA_INVALID"
     return None, stage if isinstance(stage, str) and stage in STAGES and stage != "SUCCESS" else "UNEXPECTED"
 
@@ -2166,6 +2106,8 @@ def checkin_assigned_account(account: dict, candidates: list[dict], profile: dic
             from account_observations import safe_user_group
 
             safe_result = {"quota": quota}
+            if quota is None:
+                safe_result["authenticated"] = True
             group = safe_user_group(result.get("user_group"))
             if group is not None:
                 safe_result["user_group"] = group
@@ -2207,7 +2149,7 @@ def run_checkin(notify: bool = True, manifest_group: dict | None = None,
             rows[index].update(quota=quota, stage=stage)
             write_report(result_path, manifest_group, rows)
         log(f"{label}: {stage}" + (f" {balance}" if balance is not None else ""))
-        if quota is not None:
+        if stage == "SUCCESS":
             success_count += 1
             if index < total - 1:
                 time.sleep(random.uniform(3, 8))

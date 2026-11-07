@@ -42,12 +42,12 @@ function fixture(t, options = {}) {
         alarm() { return alarm; }, plan() { return values.get("plan"); } };
 }
 
-test("configuration defaults empty and requires explicit enabled booleans", () => {
+test("configuration defaults empty and enables new targets unless explicitly disabled", () => {
     assert.deepEqual(parseConfig(undefined), []);
     assert.deepEqual(parseConfig(rawConfig([target("github_a", { enabled: false })]))[0].enabled, false);
     const missing = target();
     delete missing.enabled;
-    assert.throws(() => parseConfig(rawConfig([missing])), /^Error: CONFIG_INVALID$/);
+    assert.equal(parseConfig(rawConfig([missing]))[0].enabled, true);
 });
 
 test("configuration rejects duplicate IDs, case-insensitive repositories and invalid trust boundaries", () => {

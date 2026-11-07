@@ -30,4 +30,12 @@ Test first with Node built-in tests and mocked HTTP. Verify native workerd/SQLit
 
 ## Entry Correction Approved 2026-11-08
 
-Supersedes earlier public status entry: `/` returns only hello world. Fixed `/token` provides a credential input, then the existing full administration UI after Bearer verification; optional `/token#token=...` bootstrap stays supported. `/health` is authenticated and the configuration overview moves into the private UI. No secret in pathname, no browser storage or authentication bypass. Set Wrangler keep_names:false so serialized browser function does not acquire out-of-scope name helpers; test actual Wrangler bundle, not just ES source.
+Historical correction (superseded by the 2026-11-08 requirements below): `/` returns only hello world; the former fixed `/token` credential input and Bearer bootstrap were replaced. Retain Wrangler keep_names:false and test the actual Wrangler bundle, not just ES source.
+
+## Approved Revision 2026-11-08
+
+Use the actual DEBUG_ACCESS_TOKEN value as the hidden entry pathname. It is only a selector, not an authentication credential. ADMIN_USERNAME (runtime Text) and ADMIN_PASSWORD (runtime Secret) independently authenticate each private HTTPS Basic request, including Worker-to-DO requests; no Cookie, stored session or fragment bypass. No default credentials. Missing login configuration is explained at the configured entry; an invalid/missing selector still closes the entry. Root only greets, health remains private.
+
+Three navigation sections separate repository operations/next time, safe configuration diagnostics/repair advice, and repository-grouped logs distinguishing workflow/ref/id. Delete one record or clear one target only; reuse existing SQLite logs and preserve receipts/schedules. Read failures are visible, never stale actionable state. New target omitted enabled defaults true; explicit false and matching stored disable remain intact. Existing daily scheduler and manual idempotency invariants are unchanged.
+
+Verify dummy credentials, old Bearer rejection, native SQLite and actual bundled Chromium at five widths. Simplify deployment/token/current user guides. Combined delivery also adds backwards-compatible OS-grouped account configuration and independently verified login/balance reporting; no real business calls or manual deployment during verification.
