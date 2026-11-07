@@ -4,6 +4,25 @@
 
 **代码可部署不等于已经部署或启用。** 首次部署不带业务变量，默认没有目标；示例全部为 `enabled: false`。连接 GitHub、保存令牌、真实触发和关闭原定时任务都需要你自行操作或另行授权。
 
+## 先选对部署路径与分支
+
+遇到界面默认 `main`，先看 Cloudflare 实际连接的是哪个仓库，**不要直接把所有 `main` 都改掉**：
+
+| 你的部署方式 | Cloudflare 连接的源码仓库 | Production branch | Root directory |
+| --- | --- | --- | --- |
+| 连接本项目原仓库或保留全部文件的 Fork | 有 Python、`.github/` 和 `cloudflare/` 的签到仓库 | `dev-plus`，该分支必须包含本目录 | `cloudflare` |
+| 点击下方按钮，克隆独立触发器 | Cloudflare 为你新建的仓库，根目录直接有 `package.json`、`wrangler.jsonc`、`src/` | 新仓库实际的默认分支，通常是 `main`，这是正常的 | 仓库根目录，留空或 `/` |
+
+**三个分支概念互不替代：**
+
+1. **Cloudflare Production branch**：控制从哪个源码分支构建、部署 Worker，在 Cloudflare Build / Branch control 中选择。
+2. **`TRIGGER_CONFIG.targets[].ref`**：控制启动目标 GitHub Actions 的哪个分支，例如 `dev-plus`。修改它不会改变 Cloudflare 构建分支。
+3. **目标签到仓库的 default branch**：GitHub 要求在这里注册 `workflow_dispatch`；旧 `schedule` 也在这里生效。它可以继续是 `main`，不必为了部署触发器修改仓库默认分支。
+
+例如：独立触发器仓库用 `main` 部署 Worker，Worker 再触发 `yidu456/AgentRouter-Check-in` 的 `dev-plus`，而签到仓库默认分支保持 `main`，三者可以同时成立。`wrangler.jsonc` 不能强制 GitHub 集成选择生产分支；不要使用 Pages 的 `--branch` 参数，也不要把 `wrangler --env` 当成 Git 分支开关。
+
+建议顺序：选部署路径 → 核对生产分支与目录 → 部署空目标 Worker → [创建并保存 API Token](API-TOKENS.md) → 配置停用的 `TRIGGER_CONFIG` → 核对目标工作流与旧定时入口 → 另行确认后启用。
+
 ## 部署方式
 
 ### 推荐：连接已有签到仓库
@@ -29,6 +48,27 @@
 
 之后推送生产分支会触发构建部署；不需要额外创建部署用 GitHub Actions。**源码的 GitHub 连接不会自动授予 Worker 触发 Actions 的权限，也不会自动读取其他 GitHub 账号的令牌。** 下文的运行时 PAT 必须另外配置。
 
+### 已创建的 Worker 总是部署 main，怎么改
+
+这一节只适用于“连接原签到仓库”，不适用于按钮新建且只有 `main` 的独立仓库。
+
+1. 进入 **Workers & Pages → 你的 Worker → Settings → Build → Branch control**。部分界面将 Build 写成 Builds；这是 Worker 的构建设置，不是 GitHub 仓库 Settings。
+2. 查看连接的 Git repository 是否确实是原签到仓库，再将 **Production branch** 下拉框改为 `dev-plus` 并保存。Cloudflare 默认选择 Git 仓库的默认分支，并不会因为部署按钮 URL 或 `ref` 写了 `dev-plus` 就永久更改这项设置。
+3. 在同一构建设置中核对 **Root directory / Path = `cloudflare`**、**Build command = `npm test`**、**Deploy command = `npm run deploy`**、Worker 名称与配置一致，并关闭预览构建。
+4. 若下拉框没有 `dev-plus`，先在 **当前连接的那个 GitHub 仓库** 的分支列表中确认它是否存在、是否已推送并包含 `cloudflare/`。Fork 不一定复制了非默认分支；只有本机存在的分支也不会出现。连接错了仓库则修正 Git 连接，不要修改另一个仓库的默认分支来绕过问题。
+5. 保存后触发一次**来自 `dev-plus` 的新构建**，例如正常推送该分支上的文档或代码更新。不要只反复 Retry / Rerun 旧的 `main` 构建记录：重试针对原提交，不会把那个提交变成 `dev-plus` 最新提交。需要手工新建构建时，先核对界面实际选择的分支和提交。
+6. 在新构建记录中核对源码仓库、分支、commit SHA 和生产部署结果。更改配置本身不会立即替换已部署版本；看到保存成功不等于新代码已上线。
+
+若原仓库的 `main` 尚无 `cloudflare/`，从 `main` 构建常见结果是找不到目录、`package.json` 或 Wrangler 配置。本指南不要求把开发代码合并到 `main`、重命名 `main` 或修改 GitHub 默认分支；先修正 Cloudflare 的源码分支选择。
+
+### 部署完成后先核对这些
+
+- 构建记录来自预期的源码分支；`npm test` 和 `npm run deploy` 均成功。
+- Durable Object 绑定名为 `SCHEDULES`，类为 `TriggerSchedule`；Cron 为 UTC `5 16 * * *`，即北京时间 00:05。
+- 首次没有运行时配置时不会签到，这是安全默认值，不是部署失败。
+- `workers_dev: false`，没有公开触发 URL；访问 URL 或看到 404 不能判断签到调度是否成功。
+- 确认 `TRIGGER_CONFIG` 在运行时 Variables & Secrets，而不是构建变量里；具体凭据步骤见 [API Token 完整指南](API-TOKENS.md)。
+
 ### 可选：按钮克隆独立触发器仓库
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/yidu456/AgentRouter-Check-in/tree/dev-plus/cloudflare)
@@ -50,6 +90,8 @@
 `GITHUB_TOKEN_A/B` 是示例名称，不是系统自动提供的 GitHub Actions `GITHUB_TOKEN`。可使用其他合规名称，并让对应目标的 `token_secret` 引用它。JSON 中只放 Secret 名称，**绝不放 PAT 的值**。
 
 推荐每个目标使用只授权该目标仓库的 fine-grained PAT，Repository permissions 授予 **Actions: Read and write**。不同 GitHub 账号分别创建各自获授权的令牌；组织仓库还需满足其审批/授权政策。`Actions: write` 不只允许一个工作流的 dispatch，也可能管理该仓库其他 Actions 资源，所以不要使用全仓库宽权限令牌。注意令牌过期、撤销和轮换。
+
+**不知道去哪里创建 Token，或分不清 Cloudflare API Token 与 GitHub PAT？** 按 [API-TOKENS.md](API-TOKENS.md) 的逐步指南操作，包含创建页面、Resource owner、Only select repositories、最小 GitHub 权限、Cloudflare Secret 保存、双账号对应关系、轮换和 401/403/404 排错。Cloudflare 构建页的 API token 是部署凭据，不要把 GitHub PAT 填进去。
 
 `wrangler.jsonc` 不包含 `vars`、账号 ID 或业务凭据，并启用 `keep_vars: true`，后续代码部署保留在界面配置的普通运行时变量。Wrangler 部署本身也不会删除已有 Secrets。保留变量不等于自动备份或恢复变量；更新前自行保留脱敏配置记录，真实令牌只保存在秘密管理位置。
 
@@ -154,3 +196,5 @@ npm run check
 等待时没有长连接、内存计时器或全天运行进程；通常每天一个共享 Cron，N 个目标约 2N 次对象调用，另加初始化、恢复和平台重试。Worker、Durable Objects、存储、日志及 Workers Builds 仍受各自额度/计费约束，不承诺永久零费用；实际签到 Actions 用量由各 GitHub 账号承担。大量目标还受变量大小、子请求和 Cron 执行限制，本项目不是无限规模调度服务。
 
 官方参考：[Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)、[构建设置](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)、[部署按钮限制](https://developers.cloudflare.com/workers/platform/deploy-buttons/)、[运行时变量](https://developers.cloudflare.com/workers/configuration/environment-variables/)、[Wrangler keep-vars](https://developers.cloudflare.com/workers/wrangler/commands/workers/)、[Durable Object migrations](https://developers.cloudflare.com/durable-objects/reference/durable-object-class-migrations-legacy/)、[Alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)、[GitHub workflow dispatch](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event)。
+
+分支参考：[修改生产分支](https://developers.cloudflare.com/workers/ci-cd/builds/build-branches/#change-production-branch)、[针对原提交重试构建](https://developers.cloudflare.com/changelog/post/2025-03-17-rerun-build/)。

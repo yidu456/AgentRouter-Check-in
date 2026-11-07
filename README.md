@@ -23,6 +23,8 @@
 
 [部署 Cloudflare 触发器模板](https://deploy.workers.cloudflare.com/?url=https://github.com/yidu456/AgentRouter-Check-in/tree/dev-plus/cloudflare)（公共仓库适用；仅复制触发器子目录到新仓库，不复制 Python 签到项目）。连接 GitHub 用于代码部署，不等于授权启动 GitHub Actions，仍需配置目标仓库限定的 Token。
 
+**部署界面默认 main？** 连接原签到仓库时，在 Worker 的 **Settings → Build → Branch control** 中选择 `dev-plus`；按钮新建的独立触发器仓库则可以正常使用 `main`、根目录留空。Cloudflare 构建分支与目标 Actions 的 `ref` 是两处设置，不要混用。详见 [分支选择与已有 Worker 修正步骤](cloudflare/README.md) 和 [GitHub / Cloudflare API Token 完整指南](cloudflare/API-TOKENS.md)。
+
 正式启用前须分别关闭各目标仓库默认分支旧的 `on.schedule`，保留 `workflow_dispatch`；本功能不自动修改默认分支，也不保证平台准点启动。
 
 ## 推荐配置：一个变量配置所有账号
