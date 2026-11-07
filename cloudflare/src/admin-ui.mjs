@@ -11,8 +11,8 @@ export function adminShell() {
 @media(max-width:780px){#trigger-admin{margin:0;padding:0}#trigger-admin .ar-shell{grid-template-columns:1fr;border-radius:0}#trigger-admin .ar-sidebar{padding:13px 18px;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;border-right:0;border-bottom:1px solid var(--ar-line)}#trigger-admin .ar-sidebar-footer{display:none}#trigger-admin .ar-nav{display:flex;gap:4px}#trigger-admin .ar-nav button{padding:7px 10px}#trigger-admin .ar-nav button[aria-pressed=true]{box-shadow:inset 0 -2px var(--ar-teal)}#trigger-admin .ar-content{padding:22px 20px}}
 @media(max-width:480px){#trigger-admin .ar-brand small{display:none}#trigger-admin .ar-brand{font-size:12px}#trigger-admin .ar-monogram{width:25px;height:25px}#trigger-admin .ar-sidebar{padding:12px;flex-wrap:wrap;gap:8px}#trigger-admin .ar-nav{margin-left:auto}#trigger-admin .ar-nav button{font-size:12px}#trigger-admin .ar-content{padding:20px 14px}#trigger-admin h1{font-size:24px}#trigger-admin .ar-top{flex-wrap:wrap;gap:10px}#trigger-admin .ar-target-main{grid-template-columns:1fr;padding:16px 14px;gap:12px}#trigger-admin .ar-target-actions{flex-direction:row;justify-content:space-between;align-items:center}#trigger-admin .ar-button,#trigger-admin .ar-switch-label,#trigger-admin .ar-logs summary{min-height:44px}#trigger-admin .ar-log-content{padding:0 14px 12px}#trigger-admin .ar-log-row{grid-template-columns:minmax(0,1fr) auto;gap:4px 8px}#trigger-admin .ar-log-time{grid-column:1;display:flex;gap:8px;flex-wrap:wrap}#trigger-admin .ar-log-body{grid-column:1}#trigger-admin .ar-log-row>button{grid-column:2;grid-row:1/span 2}#trigger-admin .ar-next-time{font-size:17px}#trigger-admin .ar-next-time.paused{font-size:14px}#trigger-admin .ar-section-heading{flex-wrap:wrap}}
 </style>
-<div class="ar-shell"><aside class="ar-sidebar" aria-label="页面导航"><div class="ar-brand"><span class="ar-monogram" aria-hidden="true">AR</span><div>AgentRouter<small>Cloudflare 调度</small></div></div><nav class="ar-nav" aria-label="查看方式"><button type="button" data-view="admin" aria-pressed="true">仓库管理</button><button type="button" data-view="public" aria-pressed="false">公开状态</button><button type="button" data-action="logout">退出管理</button></nav><div class="ar-sidebar-footer"><span>独立日期 · 独立随机</span><span>每天 01:00–23:00</span><span>Asia/Shanghai</span></div></aside>
-<div class="ar-content"><header class="ar-top"><div><h1>仓库管理</h1><p class="ar-sub">管理员视图 · 访问 Token 已验证</p></div><button type="button" class="ar-button" data-action="refresh">刷新状态</button></header><p class="ar-notice">这里只记录触发结果。GitHub 已受理不等于签到成功，最终汇总仍由 Actions 发送。刷新仅读取，不补发任务或修复日程。</p><div class="ar-section-heading"><h2>运行目标</h2><span class="ar-target-count" data-target-count></span></div><div class="ar-targets" data-targets></div><p class="ar-feedback" role="status" aria-live="polite" data-feedback></p><footer class="ar-bottom"><span>日志最多 20 条 · 删除不改变日程或防重复记录</span><span>北京时间 UTC+8</span></footer></div></div>
+<div class="ar-shell"><aside class="ar-sidebar" aria-label="页面导航"><div class="ar-brand"><span class="ar-monogram" aria-hidden="true">AR</span><div>AgentRouter<small>Cloudflare 调度</small></div></div><nav class="ar-nav" aria-label="查看方式"><button type="button" data-view="admin" aria-pressed="true">仓库管理</button><button type="button" data-action="logout">退出管理</button></nav><div class="ar-sidebar-footer"><span>独立日期 · 独立随机</span><span>每天 01:00–23:00</span><span>Asia/Shanghai</span></div></aside>
+<div class="ar-content"><header class="ar-top"><div><h1>仓库管理</h1><p class="ar-sub">管理员视图 · 访问 Token 已验证</p></div><button type="button" class="ar-button" data-action="refresh">刷新状态</button></header><p class="ar-notice">这里只记录触发结果。GitHub 已受理不等于签到成功，最终汇总仍由 Actions 发送。刷新仅读取，不补发任务或修复日程。</p><p class="ar-notice" data-config-summary aria-live="polite"></p><div class="ar-section-heading"><h2>运行目标</h2><span class="ar-target-count" data-target-count></span></div><div class="ar-targets" data-targets></div><p class="ar-feedback" role="status" aria-live="polite" data-feedback></p><footer class="ar-bottom"><span>日志最多 20 条 · 删除不改变日程或防重复记录</span><span>北京时间 UTC+8</span></footer></div></div>
 <dialog class="ar-dialog" aria-labelledby="ar-dialog-title" data-confirm-dialog><h2 id="ar-dialog-title" data-dialog-title></h2><code class="ar-dialog-target" data-dialog-target></code><p data-dialog-message></p><p data-dialog-note></p><div class="ar-dialog-actions"><button type="button" class="ar-button" data-cancel>取消</button><button type="button" class="ar-button primary" data-confirm>确认</button></div></dialog></section>`;
 }
 
@@ -27,9 +27,11 @@ export function adminClient() {
     if (!root) { token = ""; return; }
     const publicView = document.querySelector("[data-public-view]");
     const accessFeedback = document.querySelector("[data-access-feedback]");
-    const returnAdmin = document.querySelector("[data-return-admin]");
+    const accessInput = document.querySelector("[data-access-input]");
+    const accessSubmit = document.querySelector("[data-access-submit]");
     const list = root.querySelector("[data-targets]");
     const feedback = root.querySelector("[data-feedback]");
+    const overview = root.querySelector("[data-config-summary]");
     const dialog = root.querySelector("[data-confirm-dialog]");
     const refreshButton = root.querySelector('[data-action="refresh"]');
     const errors = {
@@ -104,8 +106,10 @@ export function adminClient() {
     function logout(message = "已退出管理。访问 Token 已从本页内存清除；需重新打开原链接进入。") {
         session++;
         token = "";
+        accessInput.value = "";
         verified = false;
         busy = false;
+        accessSubmit.disabled = false;
         targets = [];
         pending = null;
         expanded.clear();
@@ -113,12 +117,12 @@ export function adminClient() {
         list.replaceChildren();
         root.querySelector("[data-target-count]").textContent = "";
         feedback.textContent = "";
+        overview.textContent = "";
         for (const selector of ["[data-dialog-title]", "[data-dialog-target]", "[data-dialog-message]", "[data-dialog-note]"])
             root.querySelector(selector).textContent = "";
         dialog.close();
         root.hidden = true;
         publicView.hidden = false;
-        returnAdmin.hidden = true;
         announce(message);
     }
     async function request(path, body) {
@@ -227,10 +231,26 @@ export function adminClient() {
         if (!token || busy) return;
         const current = session;
         busy = true;
+        accessSubmit.disabled = true;
         refreshButton.disabled = true;
         if (verified) render();
         try {
+            overview.textContent = "正在读取配置状态…";
+            const health = await request("/health");
+            if (current !== session) return;
+            if (health?.config) {
+                const configText = health.config.state === "valid" ? "JSON 校验通过"
+                    : health.config.state === "missing" ? "未配置 TRIGGER_CONFIG"
+                    : `JSON 配置错误：${health.config.error?.field ?? "config"}（${health.config.error?.code ?? "CONFIG_INVALID"}）`;
+                const counts = health.github_tokens;
+                overview.textContent = `${configText}；GitHub Token 已配置 ${counts?.configured ?? 0} / 缺失 ${counts?.missing ?? 0} / 不合法 ${counts?.invalid ?? 0}；企业微信 ${health.wecom?.state === "configured" ? "已配置（未验证）" : "未配置或不合法"}；SQLite ${health.storage_binding?.configured ? "已绑定" : "未绑定"}`;
+                verified = true;
+                root.hidden = false;
+                publicView.hidden = true;
+                if (health.config.state !== "valid") throw new Error("CONFIG_INVALID");
+            } else overview.textContent = "配置状态暂不可用";
             const data = await request("/api/admin/targets");
+            if (current !== session) return;
             if (data?.status !== "OK" || !Array.isArray(data.targets) || data.targets.length > 100
                 || !data.targets.every(validTarget) || new Set(data.targets.map((target) => target.id)).size !== data.targets.length)
                 throw new Error("RESPONSE_INVALID");
@@ -238,13 +258,12 @@ export function adminClient() {
             verified = true;
             root.hidden = false;
             publicView.hidden = true;
-            returnAdmin.hidden = true;
             accessFeedback.textContent = "";
             if (announceSuccess) announce("已刷新实际开关、已保存日程和最近记录。未触发运行或修改日程。");
         } catch (error) {
             if (current === session && error.message !== "SESSION_ENDED") announce(errors[error.message] ?? errors.RESPONSE_INVALID);
         } finally {
-            if (current === session) { busy = false; if (verified) render(); else refreshButton.disabled = false; }
+            if (current === session) { busy = false; accessSubmit.disabled = false; if (verified) render(); else refreshButton.disabled = false; }
         }
     }
     function confirm(action, target, logId) {
@@ -315,18 +334,14 @@ export function adminClient() {
     }
     root.querySelector('[data-action="logout"]').addEventListener("click", () => logout());
     refreshButton.addEventListener("click", () => refresh());
-    root.querySelector('[data-view="public"]').addEventListener("click", () => {
-        if (!verified) return;
-        root.hidden = true;
-        publicView.hidden = false;
-        returnAdmin.hidden = false;
-        accessFeedback.textContent = "公开状态只显示配置默认值，不读取数据库开关。管理 Token 仍在本页内存，可返回管理或退出。";
-    });
-    returnAdmin.addEventListener("click", () => {
-        if (!verified) return;
-        root.hidden = false;
-        publicView.hidden = true;
-        returnAdmin.hidden = true;
+    document.querySelector("[data-access-form]").addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (busy) return;
+        const value = accessInput.value;
+        logout("正在验证访问 Token…");
+        if (!/^[A-Za-z0-9_-]{32,128}$/.test(value) || /\s/.test(value)) { announce(errors.UNAUTHORIZED); return; }
+        token = value;
+        void refresh();
     });
     root.querySelector("[data-cancel]").addEventListener("click", () => { pending = null; dialog.close(); });
     dialog.addEventListener("cancel", () => { pending = null; });

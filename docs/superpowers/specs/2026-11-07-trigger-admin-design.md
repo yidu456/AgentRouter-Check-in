@@ -27,3 +27,7 @@ UI matches approved blue/teal preview, target cards, switches, real stored next-
 ## Verification And Delivery
 
 Test first with Node built-in tests and mocked HTTP. Verify native workerd/SQLite persistence across restart, public privacy, authentication, override, manual dedupe after log deletion, unchanged automatic plan and bot outcome with dummy credentials/outbound interception. Verify desktop/mobile real UI using a local fixture and no business network. Update deployment/token/database guides. Run Node suite, Python suite/syntax, shell syntax, docs checks, diff checks and Wrangler dry-run. Review combined changes, commit task files only and fast-forward push `yidu456 HEAD:main`, checking remote SHA. Preserve existing AGENTS/planning and unrelated origin/local-main state. No real dispatch/login/bot send, manual Cloudflare deployment or old GitHub cron deletion.
+
+## Entry Correction Approved 2026-11-08
+
+Supersedes earlier public status entry: `/` returns only hello world. Fixed `/token` provides a credential input, then the existing full administration UI after Bearer verification; optional `/token#token=...` bootstrap stays supported. `/health` is authenticated and the configuration overview moves into the private UI. No secret in pathname, no browser storage or authentication bypass. Set Wrangler keep_names:false so serialized browser function does not acquire out-of-scope name helpers; test actual Wrangler bundle, not just ES source.

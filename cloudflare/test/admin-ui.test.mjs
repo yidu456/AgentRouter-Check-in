@@ -30,7 +30,7 @@ test("static administration client is configured-only and never authenticates or
     assert.equal((await worker.fetch(new Request("https://ui.test/admin/client.js", { method: "POST" }), env)).status, 405);
 });
 
-function bootstrap(hash, handler) {
+function bootstrap(hash, handler, customHealth = false) {
     const nodes = new Map();
     const node = (selector) => {
         if (!nodes.has(selector)) nodes.set(selector, { hidden: selector === "#trigger-admin", textContent: "",
@@ -55,6 +55,7 @@ function bootstrap(hash, handler) {
         crypto: { randomUUID: () => "00000000-0000-4000-8000-" + String(++sequence).padStart(12, "0") },
         fetch: async (url, options) => {
             assert.equal(location.hash, "", "Fragment must be erased synchronously before fetch");
+            if (url === "/health" && !customHealth) return Response.json({config:{state:"valid"},github_tokens:{configured:1,missing:0,invalid:0},wecom:{state:"missing"},storage_binding:{configured:true}});
             calls.push({ url, options }); return handler(url, options);
         },
     });
@@ -69,6 +70,63 @@ test("client removes every fragment without using query credentials or fetching 
         assert.equal(page.node("#trigger-admin").hidden, true);
         assert.ok(!page.calls.some((call) => call.options));
     }
+});
+
+test("fixed token entry authenticates submitted value without storing it or navigating", async () => {
+    const page = bootstrap("", async () => Response.json({ status: "OK", targets: [uiTarget] }));
+    page.node("[data-access-input]").value = access;
+    assert.equal(typeof page.node("[data-access-form]").listeners.submit, "function");
+    page.node("[data-access-form]").listeners.submit({ preventDefault() {} });
+    await page.settle();
+    assert.equal(page.node("[data-access-input]").value, "");
+    assert.equal(page.node("#trigger-admin").hidden, false);
+    assert.equal(page.calls.find((call) => call.options).options.headers.Authorization, "Bearer " + access);
+});
+
+test("authenticated overview displays actual configuration checks", async () => {
+    const page = bootstrap("#token=" + access, async (path) => Response.json(path === "/health"
+        ? { config: { state: "valid", error: null }, github_tokens: { configured: 2, missing: 1, invalid: 0 },
+            wecom: { state: "configured" }, storage_binding: { configured: true } }
+        : { status: "OK", targets: [] }), true);
+    await page.settle();
+    assert.match(page.node("[data-config-summary]").textContent, /JSON.*通过/);
+    assert.match(page.node("[data-config-summary]").textContent, /Token.*2.*1/);
+});
+
+test("overview failures and invalid configuration never leave a blank or expose targets", async () => {
+    for (const state of ["missing", "invalid"]) {
+        const page = bootstrap("#token=" + access, async (path) => {
+            assert.equal(path, "/health", "Invalid config must stop before listing targets");
+            return Response.json({ config: { state, error: { field: "targets[0].ref", code: "TARGET_FIELD" } },
+                github_tokens: { configured: 0, missing: 0, invalid: 0 }, wecom: { state: "missing" }, storage_binding: { configured: true } });
+        }, true);
+        await page.settle();
+        assert.equal(page.node("#trigger-admin").hidden, false);
+        assert.match(page.node("[data-config-summary]").textContent, /未配置|配置错误/);
+        assert.equal(page.node("[data-targets]").children.length, 1);
+    }
+    for (const mode of ["401", "transport"]) {
+        const page = bootstrap("#token=" + access, async () => {
+            if (mode === "transport") throw Error("private_response_marker");
+            return new Response("private_response_marker", { status: 401 });
+        }, true);
+        await page.settle();
+        assert.equal(page.node("#trigger-admin").hidden, true);
+        assert.ok(page.node("[data-access-feedback]").textContent.length > 0);
+        assert.ok(!page.node("[data-access-feedback]").textContent.includes("private_response_marker"));
+        assert.equal(page.node("[data-access-submit]").disabled, false);
+    }
+});
+
+test("logout during overview request rejects its late reply before target listing", async () => {
+    let finish;
+    const page = bootstrap("#token=" + access, () => new Promise(resolve => { finish = resolve; }), true);
+    page.node('[data-action="logout"]').listeners.click();
+    finish(Response.json({config:{state:"valid"}}));
+    await page.settle();
+    assert.equal(page.calls.filter(call => call.options).length, 1);
+    assert.equal(page.node("#trigger-admin").hidden, true);
+    assert.equal(page.node("[data-config-summary]").textContent, "");
 });
 
 test("client verifies fragment Bearer before showing a private view and logout clears it", async () => {
@@ -94,6 +152,7 @@ test("unauthorized bootstrap and expired auth leave no private DOM or raw error 
     assert.equal(page.node("#trigger-admin").hidden, true);
     assert.equal(page.node("[data-targets]").children.length, 0);
     assert.match(page.node("[data-access-feedback]").textContent, /访问|验证/);
+    assert.equal(page.node("[data-access-submit]").disabled, false, "Failed auth must permit another token submission");
     assert.ok(!page.node("[data-access-feedback]").textContent.includes("private_exception_marker"));
     authorized = true;
     const expired = bootstrap("#token=" + access, async () => authorized
@@ -110,6 +169,7 @@ test("unauthorized bootstrap and expired auth leave no private DOM or raw error 
 test("logout invalidates an in-flight listing so its late response cannot show private state", async () => {
     let complete;
     const page = bootstrap("#token=" + access, () => new Promise((resolve) => { complete = resolve; }));
+    await page.settle();
     page.node('[data-action="logout"]').listeners.click();
     complete(Response.json({ status: "OK", targets: [] }));
     await page.settle();
@@ -211,6 +271,7 @@ test("hash token replacement clears prior session and rejects its late authentic
     let request = 0;
     const page = bootstrap("#token=" + access, async () => ++request === 1
         ? new Promise((resolve) => { oldReply = resolve; }) : Response.json({ status: "OK", targets: [] }));
+    await page.settle();
     assert.equal(typeof page.listeners.hashchange, "function");
     page.location.hash = "#token=" + "y".repeat(32);
     page.listeners.hashchange();

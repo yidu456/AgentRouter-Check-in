@@ -21,7 +21,7 @@
 
 在自己电脑运行 `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"`，把输出作为运行时 **Secret** `DEBUG_ACCESS_TOKEN` 保存并发布。只接受 32～128 个字母、数字、`_`、`-`，不要重用其他凭据，也不要把真实值贴到聊天或提交到 Git。
 
-访问 `https://你的Worker域名/#token=随机值`；`#token=` 不随首页请求传到服务器，页面立即清除地址栏 fragment，再用请求头鉴权。Token 只在页面内存中，刷新需重新打开原链接。没有配置、留空或格式错误则管理功能关闭，自动调度不因此停用。删除/轮换 Secret 会撤销原链接的操作权限。普通首页仍公开脱敏状态，不能看到仓库详情。
+访问固定 `https://你的Worker域名/token` 输入访问 Token；快捷链接为 `/token#token=随机值`。`#token=` 不随首页请求传到服务器，页面立即清除地址栏 fragment，再用请求头鉴权。Token 只在页面内存中，刷新需重新输入或打开快捷链接。没有配置、留空或格式错误则管理功能关闭，自动调度不因此停用。删除/轮换 Secret 会撤销原链接的操作权限。普通首页仅显示 hello world；配置状态和仓库详情均需鉴权。
 
 完整链接也属于凭据，避免公开分享、同步书签或截图。管理 Token 持有者可启停和手动触发所有配置目标，并删除显示日志；它不是只读权限。数据库和开关优先级见 [管理页说明](README.md#管理页与数据库可选)。
 
@@ -106,7 +106,7 @@ Fine-grained PAT 当前不支持“另一个用户个人仓库的协作者”和
 
 企业微信群 → 创建普通群机器人 → 复制 Webhook；在 Worker 的运行时 **Variables & Secrets** 添加 **Secret** `WECOM_WEBHOOK_URL` 并发布。URL 必须是完整的 `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...`，仅支持该官方主机和单个 key 参数。
 
-这不是 GitHub PAT，也不是 Cloudflare build token；只用于 Cloudflare 调度结果通知。首页显示未配置、格式不合法或已配置，但不会请求机器人验证。不要把 Webhook 写进 JSON、日志、截图或聊天；已有 GitHub 最终签到通知不受这个可选设置影响。
+这不是 GitHub PAT，也不是 Cloudflare build token；只用于 Cloudflare 调度结果通知。鉴权后的管理概况显示未配置、格式不合法或已配置，但不会请求机器人验证。不要把 Webhook 写进 JSON、日志、截图或聊天；已有 GitHub 最终签到通知不受这个可选设置影响。
 
 ## 4. Cloudflare 构建页 API token 怎么处理
 

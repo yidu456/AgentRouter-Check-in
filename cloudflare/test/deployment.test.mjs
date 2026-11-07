@@ -34,6 +34,7 @@ test("the deployment binds the exported scheduler to a SQLite namespace", async 
 test("deployment preserves dashboard vars without shipping runtime credentials or enabled targets", () => {
     const config = readJson("wrangler.jsonc");
     assert.equal(config.keep_vars, true);
+    assert.equal(config.keep_names, false, "Serialized browser code must not gain worker-scoped name helpers");
     for (const key of ["vars", "account_id", "secrets", "env"]) {
         assert.equal(Object.hasOwn(config, key), false, `${key} must stay dashboard-managed`);
     }

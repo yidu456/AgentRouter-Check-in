@@ -12,9 +12,9 @@ Cloudflare 只调度，登录仍在 GitHub 的 Ubuntu、Windows、macOS runner �
 2. Durable Object 保存当前自动日程的日期、随机目标 UTC 时间戳、尝试状态和安全结果码，并用 `setAlarm(timestamp)` 注册未来执行。不在内存中 `sleep`，也不提前启动 GitHub runner。
 3. Alarm 到点调用 GitHub REST 的 `workflow_dispatch` 接口，只传仓库、工作流、目标分支，不传签到 Secret。
 4. 当前尝试结束后安排该目标下一天的独立随机时间。每日低频 Cron 只负责各目标的首次初始化和修复缺失日程，不重抽已经保存的当天目标。一个目标配置或触发失败不阻止其他目标；分别保存结果和去重状态。
-5. Worker 提供公开只读首页及 `/health`，检查本地 JSON、Secret 配置数量和初始启用状态，不展示敏感值、目标身份或读取日程；不调用外部服务。没有免鉴权触发/执行/配置写入接口。
+5. `/` 仅显示 hello world，固定 `/token` 提供管理访问入口。配置状态、仓库列表及 `/health` 均需独立访问 Token 鉴权；不提供免鉴权触发/写入接口。
 6. 可选 Secret `WECOM_WEBHOOK_URL` 用于实际 dispatch 后的调度结果通知，持久记录通知尝试以避免重复；机器人失败不改变 GitHub 触发结果，也不增加轮询。账号最终签到报告仍由 GitHub 发送。
-7. 可选独立 `DEBUG_ACCESS_TOKEN` 开启管理页，复用已有 SQLite 存储持久开关、日程、最近 20 条调度日志及手动回执。没有访问 Secret 时管理功能关闭，自动调度不受影响。`/#token=` 入口只把访问凭据留在页面内存，所有私人状态读取/操作需 Bearer 鉴权。详见 [获批管理设计](superpowers/specs/2026-11-07-trigger-admin-design.md)。
+7. 可选独立 `DEBUG_ACCESS_TOKEN` 开启管理页，复用已有 SQLite 存储持久开关、日程、最近 20 条调度日志及手动回执。没有访问 Secret 时管理功能关闭，自动调度不受影响。`/token#token=` 入口只把访问凭据留在页面内存，所有私人状态读取/操作需 Bearer 鉴权。详见 [获批管理设计](superpowers/specs/2026-11-07-trigger-admin-design.md)。
 
 ## 时间规则
 

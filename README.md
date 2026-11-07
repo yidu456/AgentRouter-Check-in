@@ -27,9 +27,9 @@
 
 正式启用前须分别关闭各目标仓库默认分支旧的 `on.schedule`，保留 `workflow_dispatch`；本功能不自动修改默认分支，也不保证平台准点启动。
 
-部署后可通过 `workers.dev` 首页检查脱敏配置状态，`/health` 提供只读 JSON；打开页面不触发签到。可在 Cloudflare 添加 Secret `WECOM_WEBHOOK_URL`，接收仓库/分支及 GitHub 触发结果通知；“已受理”不等于签到成功，GitHub 最终汇总仍保持不变。实际域名从 Cloudflare 的 Domains & Routes 复制。
+部署后普通 `/` 只显示 `hello world`，固定 `/token` 是管理入口；鉴权后才显示配置状态和仓库，`/health` 也需鉴权。打开页面不触发签到。可设置 Secret `WECOM_WEBHOOK_URL` 接收调度通知，“已受理”不等于签到成功。实际域名从 Cloudflare Domains & Routes 复制。
 
-可选管理页：设置独立 Secret `DEBUG_ACCESS_TOKEN` 后，用 `https://你的Worker域名/#token=访问Token` 进入。可持久开启/关闭单个目标、查看下次北京时间、确认后手动触发，以及查看/删除最近 20 条调度日志。复用已有 SQLite Durable Object，不需要额外 D1；不配置访问 Token 就关闭管理功能，原自动调度不受影响。配置与安全边界见 [管理页说明](cloudflare/README.md#管理页与数据库可选)。
+可选管理页：设置独立 Secret `DEBUG_ACCESS_TOKEN` 后，打开 `https://你的Worker域名/token` 输入访问 Token（或 `/token#token=访问Token` 快捷进入）。可持久开启/关闭单个目标、查看下次北京时间、确认后手动触发，以及查看/删除最近 20 条调度日志。复用已有 SQLite Durable Object，不需要额外 D1；不配置访问 Token 就关闭管理功能，原自动调度不受影响。配置与安全边界见 [管理页说明](cloudflare/README.md#管理页与数据库可选)。
 
 ## 推荐配置：一个变量配置所有账号
 

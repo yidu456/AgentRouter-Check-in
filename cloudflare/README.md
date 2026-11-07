@@ -66,7 +66,7 @@
 - 构建记录来自预期的源码分支；`npm test` 和 `npm run deploy` 均成功。
 - Durable Object 绑定名为 `SCHEDULES`，类为 `TriggerSchedule`；Cron 为 UTC `5 16 * * *`，即北京时间 00:05。
 - 首次没有运行时配置时不会签到，这是安全默认值，不是部署失败。
-- `workers_dev: true` 开放只读状态页，`preview_urls: false` 关闭版本预览 URL；打开状态页不会签到。
+- `workers_dev: true` 开放根路径问候与 `/token` 管理入口，`preview_urls: false` 关闭版本预览 URL；打开页面不会签到。
 - 确认 `TRIGGER_CONFIG` 在运行时 Variables & Secrets，而不是构建变量里；具体凭据步骤见 [API Token 完整指南](API-TOKENS.md)。
 
 ### 可选：按钮克隆独立触发器仓库
@@ -77,16 +77,16 @@
 
 这个独立新仓库的 Root directory 应为仓库根目录，而不是再次填写 `cloudflare`。核对构建命令 `npm test`、部署命令 `npm run deploy`，保留 Worker 名称 `agentrouter-trigger`，并关闭预览构建；生产分支以新仓库实际创建的分支为准，不假定也是 `main`。若账号下已存在本项目的同名 Worker，可改用连接已有仓库方式；若同名的是其他应用，先停止并另行确认部署方案，不要误覆盖。若想继续跟踪已有签到仓库的更新，使用推荐的连接已有仓库方式，按钮新建的仓库不会自动同步上游。
 
-## 访问链接与只读状态页
+## 访问链接与管理入口
 
-部署成功后，到 Worker 的 **Settings → Domains & Routes** 复制 `workers.dev` 地址。通常形式为 `https://agentrouter-trigger.<你的账号子域名>.workers.dev/`；这里的子域名必须替换，不能从 GitHub 仓库名推断，也不是本指南声称已部署的地址。
+部署成功后到 Worker 的 **Settings → Domains & Routes** 复制实际 HTTPS 地址，不要从 GitHub 仓库名猜测域名。
 
-- 打开 `/`：显示 JSON 格式和字段是否通过、Token 已配置/缺失/格式不合法数量、JSON 初始启用数量、存储绑定和可选企业微信配置；实际数据库开关仅在鉴权后的管理页查看。
-- 打开 `/health`：返回同样的脱敏 JSON 状态，方便程序读取。公开页面和接口不显示目标 ID、仓库、分支、Secret 名称、密钥或完整配置。
-- JSON 不合法会提示固定字段路径和修正方向，不回显错误值或原始解析异常。
-- 已配置 Token / Webhook 仅表示存在并通过本地格式检查，**未验证 GitHub 权限、有效期或机器人送达**。状态页不请求 GitHub、企业微信或对象存储，不初始化日程，也不查询实际历史运行结果。
-- 修改运行时变量后，保存并 Deploy，再刷新状态页。`no-store` 禁用缓存。页面是公开的，访问者能看到脱敏的配置状态和数量；有访问限制需要时，在 Cloudflare 配置 Access。
-- 发布新代码会按 `workers_dev: true` 启用该地址。若想关闭公开状态页，需同步修改 Wrangler 为 false，再部署；仅在面板关闭可能被下一次部署重新启用。
+- `/`：只显示 `hello world`，不展示配置状态，也不加载管理脚本。
+- `/token`：固定管理入口。配置了 `DEBUG_ACCESS_TOKEN` 后显示输入框，输入访问 Token 并验证后，才加载真实仓库列表、配置概况、开关、下一次北京时间和近期日志。没有配置或访问 Secret 不合法时入口关闭（404）。
+- `/token#token=访问Token`：可选快捷进入，fragment 不随首页请求发送到服务器，页面立即移除；不是 `/token` 路径本身含有秘密。
+- `/health`：必须通过同一 Bearer Token 鉴权才能读取配置 JSON；不再公开。只检查本地格式/配置，不验证 GitHub PAT 权限或机器人送达。
+
+JSON 有错、Token 缺失、没有目标或存储错误会在管理页面明确显示，不伪造示例仓库和日程。页面访问和刷新不会运行签到。配置修改后保存并 Deploy；退出或刷新清除内存凭据，可重新在 `/token` 输入。页面无需追加模式变量。
 
 ## 运行时变量与凭据
 
@@ -168,9 +168,9 @@
    ```
 
 2. 在 Worker **Settings → Variables & Secrets** 添加 **Secret** `DEBUG_ACCESS_TOKEN`，粘贴生成值并保存、Deploy。只接受 32～128 个字母、数字、`_`、`-`；不要填 GitHub PAT、机器人密钥或便于猜测的密码。
-3. 从 **Domains & Routes** 复制实际 HTTPS 地址，打开 `https://你的Worker域名/#token=生成的访问Token`。普通链接继续显示公开状态，只有通过鉴权后才下载仓库、日程和日志。
+3. 从 **Domains & Routes** 复制实际 HTTPS 地址，打开 `https://你的Worker域名/token`，在输入框粘贴访问 Token；也可使用 `/token#token=生成的访问Token` 快捷进入。普通 `/` 只显示 hello world，只有通过鉴权后才下载仓库、日程和日志。
 
-未配置、空值或格式不合法会关闭整个管理 API，但不会关闭原有自动调度。`#token=` 是 URL fragment，不随首页请求发送到服务器；页面读取后立即从地址栏移除，只在页面内存中保留，之后通过 Authorization 请求头验证。没有 Cookie、localStorage 或 sessionStorage 保存。刷新后需重新打开原 Token 链接；退出管理清除内存凭据并返回公开状态。不要改成 `?token=`，查询参数不会用于鉴权且可能进入日志。
+未配置、空值或格式不合法会关闭整个管理 API，但不会关闭原有自动调度。`#token=` 是 URL fragment，不随首页请求发送到服务器；页面读取后立即从地址栏移除，只在页面内存中保留，之后通过 Authorization 请求头验证。没有 Cookie、localStorage 或 sessionStorage 保存。刷新后在 `/token` 重新输入 Token 或打开快捷链接；退出管理清除内存凭据并返回输入页。不要改成 `?token=`，查询参数不会用于鉴权且可能进入日志。
 
 完整管理链接相当于操作权限凭证，请勿截图、公开分享或保存在同步给他人的书签中。轮换/移除访问 Secret 后旧链接失效。独立 Token 不是多用户权限系统；不要给不信任的人使用。界面不会显示 GitHub PAT、Webhook、Secret 名称或完整原始 JSON。
 
@@ -196,7 +196,7 @@
 ## 企业微信调度通知（可选）
 
 1. 在企业微信群中创建普通群机器人，复制其完整 Webhook。
-2. 在 Cloudflare 运行时 Variables & Secrets 添加 **Secret** `WECOM_WEBHOOK_URL`，保存完整 `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...`，发布后从首页查看本地配置状态。不要放到 `TRIGGER_CONFIG`、Build secrets、代码或聊天。
+2. 在 Cloudflare 运行时 Variables & Secrets 添加 **Secret** `WECOM_WEBHOOK_URL`，保存完整 `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...`，发布后从鉴权管理页查看本地配置状态。不要放到 `TRIGGER_CONFIG`、Build secrets、代码或聊天。
 3. 每次实际 dispatch 请求得到结果后，触发器尝试发送一条中文文本：目标仓库、工作流、分支、自动/手动来源及对应日期、北京时间通知时间、受理/拒绝/不确定结果和工作流页面链接。
 4. 示例中的“GitHub 已受理，不代表签到成功”只是调度结果；GitHub 最终账号汇总仍按原流程发送，通知时间也不是 runner 的精确启动时间。不新增 Cloudflare 轮询或跨仓库最终汇总。
 5. 缺少 Token、目标停用或过期日程等没有实际 dispatch 的情况不发这条通知；配置错误可看状态页，调度详情看日志。
@@ -224,7 +224,7 @@
 
 ## 日志与排错
 
-只读首页和 `/health` 可公开访问，不提供免鉴权手动触发或配置修改 API。首页/health 的 GET / HEAD 只校验本地配置、POST 返回 405，`/trigger` 等未知路径返回 404。公开页只报告 JSON 初始开关计数，不读取数据库覆盖或私人日程；真实状态在管理页查看。近期调度结果可在管理页查看，平台执行记录仍通过 Cloudflare Worker / Durable Objects 的 **Observability** 查看。
+`/` 仅显示 hello world；`/token` 只公开不含私人数据的访问入口。配置概况、仓库、日程和日志都需要鉴权，`/health` 也需要 Bearer Token。GET/HEAD 不进行调度，`/trigger` 等未知路径返回404。平台执行日志仍通过 Observability 查看。
 
 | 安全结果码 | 应检查什么 |
 | --- | --- |
