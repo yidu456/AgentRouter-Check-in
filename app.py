@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import random
+import re
 import socket
 import concurrent.futures
 import html
@@ -86,9 +87,14 @@ EMAIL_LOGIN_TEXTS = (
     "Sign in with Email or Username",
     "Email or Username",
     "Sign in with Email",
+    "使用 邮箱或用户名 登录",
     "账号登录",
     "邮箱登录",
     "密码登录",
+)
+EMAIL_LOGIN_PATTERN = re.compile(
+    "|".join(re.escape(text).replace(r"\ ", r"\s*") for text in EMAIL_LOGIN_TEXTS),
+    re.IGNORECASE,
 )
 
 
@@ -1081,19 +1087,24 @@ def wait_for_waf_ready(
 
             state = page.evaluate(
                 """
-                () => {
+                (emailPattern) => {
                     const bodyText =
                         (document.body &&
                          document.body.innerText) || '';
 
+                    const visible = el =>
+                        getComputedStyle(el).visibility === 'visible' &&
+                        (el.offsetParent !== null || el.getClientRects().length > 0);
                     const hasLoginForm =
-                        !!document.querySelector(
+                        Array.from(document.querySelectorAll(
                             'input#username, input[name="username"], input[name="email"], input[type="password"]'
-                        );
+                        )).some(visible);
 
                     const hasLoginButton =
-                        /Sign in with Email or Username|Email or Username|Log In|Sign In|登录|账号登录|邮箱登录/
-                        .test(bodyText);
+                        Array.from(document.querySelectorAll(
+                            'button, [role="tab"], a, span, div'
+                        )).some(el => visible(el) &&
+                            new RegExp(emailPattern, 'i').test((el.innerText || '').trim()));
 
                     const challengeSelectors = [
                         '#challenge-form',
@@ -1122,7 +1133,8 @@ def wait_for_waf_ready(
                         isChallenge
                     };
                 }
-                """
+                """,
+                EMAIL_LOGIN_PATTERN.pattern,
             )
 
         except Exception:
@@ -1190,71 +1202,32 @@ def click_email_login_button(
     timeout_ms: int = 15000,
 ) -> bool:
 
-    # 优先 Playwright 定位
-    # （首个候选给足超时，其余快速尝试）
-    for index, text in enumerate(
-        EMAIL_LOGIN_TEXTS
-    ):
-
-        try:
-
-            target = page.get_by_text(
-                text
-            )
-
-            target.first.wait_for(
-                state="visible",
-                timeout=(
-                    timeout_ms
-                    if index == 0
-                    else 3000
-                ),
-            )
-
-            target.first.click(
-                timeout=10000
-            )
-
-            return True
-
-        except Exception:
-            continue
+    try:
+        target = page.get_by_role("button", name=EMAIL_LOGIN_PATTERN).first
+        target.wait_for(state="visible", timeout=timeout_ms)
+        target.click(timeout=10000)
+        return True
+    except Exception:
+        pass
 
     # JS 回退
     try:
 
         clicked = page.evaluate(
             """
-            () => {
-                const candidates =
-                    Array.from(
-                        document.querySelectorAll(
-                            'button, [role="tab"], a, span, div'
-                        )
-                    );
-
-                const wanted = [
-                    'Sign in with Email or Username',
-                    'Email or Username',
-                    'Sign in with Email',
-                    '账号登录',
-                    '邮箱登录',
-                    '密码登录'
-                ];
-
+            (emailPattern) => {
+                const visible = el =>
+                    getComputedStyle(el).visibility === 'visible' &&
+                    (el.offsetParent !== null || el.getClientRects().length > 0);
+                const matches = (el, pattern) =>
+                    visible(el) && pattern.test((el.innerText || '').trim());
+                const pattern = new RegExp(emailPattern, 'i');
+                const exact = new RegExp('^(?:' + emailPattern + ')$', 'i');
                 const target =
-                    candidates.find(el => {
-                        const text =
-                            (el.innerText || '').trim();
-
-                        return (
-                            wanted.includes(text)
-                            ||
-                            text.includes(
-                                'Email or Username'
-                            )
-                        );
-                    });
+                    Array.from(document.querySelectorAll('button, [role="tab"], a'))
+                        .find(el => matches(el, pattern)) ||
+                    Array.from(document.querySelectorAll('span, div'))
+                        .find(el => matches(el, exact));
 
                 if (target) {
                     target.click();
@@ -1263,7 +1236,8 @@ def click_email_login_button(
 
                 return false;
             }
-            """
+            """,
+            EMAIL_LOGIN_PATTERN.pattern,
         )
 
         if clicked:
@@ -1507,7 +1481,7 @@ def browser_login_complete(
             # ------------------------------------------------
 
             has_inputs = page.locator(
-                LOGIN_FORM_INPUT_SELECTOR
+                f":is({LOGIN_FORM_INPUT_SELECTOR}):visible"
             ).count()
 
             # ------------------------------------------------

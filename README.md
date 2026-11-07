@@ -82,6 +82,7 @@
 - VLESS WebSocket 支持 `ed` Early Data，转换为 Xray 的路径 `ed` 参数；`eh` 仅支持 Xray 固定的 `Sec-WebSocket-Protocol`。路径中的 `ed` 与外层参数冲突、启用 Early Data 却指定空/自定义头、Reality + WebSocket 等不能正确转换的组合会明确失败，不会静默忽略。保留其余路径查询、Host、SNI 和明确配置的证书校验策略。VLESS 用户 ID 必须是有效完整 UUID，不能使用截断后的脱敏值；请从客户端复制完整节点链接。
 - `profile` 可省略：默认 1440×900、像素比例 1、`zh-CN`、`Asia/Shanghai`、浅色。可固定视口/屏幕、像素比例 1/2、语言 `zh-CN`/`en-US`、时区 `Asia/Shanghai`/`Asia/Tokyo`/`America/New_York`/`Europe/London` 和 `light`/`dark`。
 - 使用真实系统 Chromium 的默认 UA，不在 Linux 上伪装 macOS。不同节点不保证不同出口 IP；基本配置固定也不代表完整硬件指纹固定或账号不可关联。
+- 登录入口已适配公开页面的“使用 邮箱或用户名 登录”和英文入口，允许空格/换行差异；就绪检查与点击共用匹配规则，不再把导航栏里的普通“登录”当作邮箱入口。仍不保证适配所有第三方登录页面或绕过 WAF。
 
 ### 最终汇总通知
 

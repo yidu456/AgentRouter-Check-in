@@ -19,13 +19,7 @@ from proxy_runtime import check_outbound, download_binary, group_proxy, parse_no
 from routing import DEFAULT_PROFILE
 
 
-LOGIN_PAGE = b"""<html><body><form>
-<input id="username" name="username" type="text">
-<input id="password" name="password" type="password">
-<button type="submit">Login</button></form>
-<script>document.querySelector('form').onsubmit = event => {
-event.preventDefault(); localStorage.setItem('user', JSON.stringify({id:1}));
-};</script></body></html>"""
+LOGIN_PAGE = (Path(__file__).parent / "fixtures" / "login_options.html").read_bytes()
 
 
 class Fixture(BaseHTTPRequestHandler):
@@ -124,7 +118,20 @@ def check_browser_profile(endpoint):
                                              args=["--no-sandbox"])
         try:
             context = browser.new_context(**profile)
-            values = context.new_page().evaluate("""() => ({
+            page = context.new_page()
+            page.set_content("""<nav><a href="/login">登录</a></nav>
+                <div hidden><input id="username"><input type="password">
+                <button>邮箱登录</button></div>
+                <input name="email" style="visibility:hidden">
+                <button style="visibility:hidden">邮箱登录</button>""")
+            assert not app.wait_for_waf_ready(page, timeout_ms=100), "NAVIGATION_OR_HIDDEN_FORM_IS_NOT_READY"
+            assert not app.click_email_login_button(page, timeout_ms=100), "HIDDEN_ENTRY_MUST_NOT_BE_CLICKED"
+            for tag in ("a", "span", "div"):
+                page.set_content(f"""<{tag} onclick="this.dataset.clicked='yes'">
+                    使用 邮箱或用户名 登录</{tag}>""")
+                assert app.click_email_login_button(page, timeout_ms=100), "LEGACY_ENTRY_FALLBACK_FAIL"
+                assert page.locator('[data-clicked="yes"]').count() == 1, "LEGACY_ENTRY_NOT_CLICKED"
+            values = page.evaluate("""() => ({
                 platform: navigator.platform, ua: navigator.userAgent,
                 locale: navigator.language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                 viewport: [innerWidth, innerHeight], screen: [screen.width, screen.height],
