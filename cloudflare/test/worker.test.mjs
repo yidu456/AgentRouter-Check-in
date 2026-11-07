@@ -257,6 +257,60 @@ test("crash after attempt persistence does not resend after restart", async (t) 
     assert.equal(f.plan().last.result, "DISPATCH_UNKNOWN");
 });
 
+test("dispatch sends one optional WeCom notice after persisted result and never on page visits", async (t) => {
+    const f = fixture(t);
+    f.env.WECOM_WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=unit-webhook";
+    await f.object.fetch(request());
+    f.setNow("2026-11-07T02:00:00+08:00");
+    f.http.mock.mockImplementation(async (url) => {
+        if (url.startsWith("https://api.github.com/")) return new Response(null, { status: 204 });
+        assert.equal(f.plan().result, "DISPATCH_ACCEPTED");
+        assert.equal(f.plan().notification, "NOTIFY_UNKNOWN");
+        return Response.json({ errcode: 0 });
+    });
+    await f.object.alarm();
+    await f.object.alarm();
+    assert.equal(f.http.mock.callCount(), 2);
+    assert.equal(f.plan().last.result, "DISPATCH_ACCEPTED");
+    assert.equal(f.plan().last.notification, "NOTIFY_ACCEPTED");
+    await worker.fetch(new Request("https://public.test/"), f.env);
+    assert.equal(f.http.mock.callCount(), 2);
+});
+
+test("WeCom failure cannot change accepted dispatch or trigger another attempt", async (t) => {
+    const f = fixture(t);
+    f.env.WECOM_WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=unit-webhook";
+    await f.object.fetch(request());
+    f.setNow("2026-11-07T02:00:00+08:00");
+    f.http.mock.mockImplementation(async (url) => url.startsWith("https://api.github.com/")
+        ? new Response(null, { status: 204 }) : Response.json({ errcode: 93000 }));
+    await f.object.alarm();
+    await f.object.alarm();
+    assert.equal(f.plan().last.result, "DISPATCH_ACCEPTED");
+    assert.equal(f.plan().last.notification, "NOTIFY_FAILED");
+    assert.equal(f.http.mock.callCount(), 2);
+});
+
+test("crash after bot send cannot duplicate dispatch or notification", async (t) => {
+    const f = fixture(t);
+    f.env.WECOM_WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=unit-webhook";
+    await f.object.fetch(request());
+    f.setNow("2026-11-07T02:00:00+08:00");
+    f.http.mock.mockImplementation(async (url) => url.startsWith("https://api.github.com/")
+        ? new Response(null, { status: 204 }) : Response.json({ errcode: 0 }));
+    const put = f.storage.put;
+    f.storage.put = async (key, value) => {
+        if (value.notification === "NOTIFY_ACCEPTED") throw new Error("fixture-storage-error");
+        return put(key, value);
+    };
+    await assert.rejects(() => f.object.alarm());
+    f.storage.put = put;
+    await new TriggerSchedule(f.ctx, f.env).alarm();
+    assert.equal(f.http.mock.callCount(), 2);
+    assert.equal(f.plan().last.result, "DISPATCH_ACCEPTED");
+    assert.equal(f.plan().last.notification, "NOTIFY_UNKNOWN");
+});
+
 test("multiple targets have separate state and independent random draws", async (t) => {
     const f = fixture(t, { samples: [60, 120], targets: [target(), target("github_b", { repository: "other/repo" })] });
     const valuesB = new Map();

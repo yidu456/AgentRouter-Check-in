@@ -19,13 +19,17 @@
 
 `cloudflare/` 是独立的 Worker 触发器，可在 Cloudflare 连接本 GitHub 仓库部署。一个 Worker 支持多个 GitHub 仓库，每个目标、每个北京时间日期分别在 01:00～23:00 独立抽取时间；GitHub 仍负责多系统登录及最终通知，Actions 不提前启动等待。
 
-部署步骤和完整变量说明见 **[Cloudflare 部署手册](cloudflare/README.md)**。连接现有仓库时选择 `dev-plus` 分支、根目录 `cloudflare`、构建命令 `npm test`、部署命令 `npm run deploy`。Worker 和 SQLite Durable Object、Cron 随代码配置部署；`TRIGGER_CONFIG` 及 GitHub Token 在 Cloudflare 的运行时 Variables & Secrets 中设置，未配置时不会触发签到。
+部署步骤和完整变量说明见 **[Cloudflare 部署手册](cloudflare/README.md)**。连接现有仓库时选择 `main` 分支、根目录 `cloudflare`、构建命令 `npm test`、部署命令 `npm run deploy`。Worker 和 SQLite Durable Object、Cron 随代码配置部署；`TRIGGER_CONFIG` 及 GitHub Token 在 Cloudflare 的运行时 Variables & Secrets 中设置，未配置时不会触发签到。
 
-[部署 Cloudflare 触发器模板](https://deploy.workers.cloudflare.com/?url=https://github.com/yidu456/AgentRouter-Check-in/tree/dev-plus/cloudflare)（公共仓库适用；仅复制触发器子目录到新仓库，不复制 Python 签到项目）。连接 GitHub 用于代码部署，不等于授权启动 GitHub Actions，仍需配置目标仓库限定的 Token。
+[部署 Cloudflare 触发器模板](https://deploy.workers.cloudflare.com/?url=https://github.com/yidu456/AgentRouter-Check-in/tree/main/cloudflare)（公共仓库适用；仅复制触发器子目录到新仓库，不复制 Python 签到项目）。连接 GitHub 用于代码部署，不等于授权启动 GitHub Actions，仍需配置目标仓库限定的 Token。
 
-**部署界面默认 main？** 连接原签到仓库时，在 Worker 的 **Settings → Build → Branch control** 中选择 `dev-plus`；按钮新建的独立触发器仓库则可以正常使用 `main`、根目录留空。Cloudflare 构建分支与目标 Actions 的 `ref` 是两处设置，不要混用。详见 [分支选择与已有 Worker 修正步骤](cloudflare/README.md) 和 [GitHub / Cloudflare API Token 完整指南](cloudflare/API-TOKENS.md)。
+**当前发布分支是 main。** 连接原签到仓库时，在 Worker 的 **Settings → Build → Branch control** 中选择 `main`；按钮新建的独立触发器仓库则可以正常使用 `main`、根目录留空。Cloudflare 构建分支与目标 Actions 的 `ref` 是两处设置，不要混用。详见 [分支选择与已有 Worker 修正步骤](cloudflare/README.md) 和 [GitHub / Cloudflare API Token 完整指南](cloudflare/API-TOKENS.md)。
 
 正式启用前须分别关闭各目标仓库默认分支旧的 `on.schedule`，保留 `workflow_dispatch`；本功能不自动修改默认分支，也不保证平台准点启动。
+
+部署后可通过 `workers.dev` 首页检查脱敏配置状态，`/health` 提供只读 JSON；打开页面不触发签到。可在 Cloudflare 添加 Secret `WECOM_WEBHOOK_URL`，接收仓库/分支及 GitHub 触发结果通知；“已受理”不等于签到成功，GitHub 最终汇总仍保持不变。实际域名从 Cloudflare 的 Domains & Routes 复制。
+
+可选管理页：设置独立 Secret `DEBUG_ACCESS_TOKEN` 后，用 `https://你的Worker域名/#token=访问Token` 进入。可持久开启/关闭单个目标、查看下次北京时间、确认后手动触发，以及查看/删除最近 20 条调度日志。复用已有 SQLite Durable Object，不需要额外 D1；不配置访问 Token 就关闭管理功能，原自动调度不受影响。配置与安全边界见 [管理页说明](cloudflare/README.md#管理页与数据库可选)。
 
 ## 推荐配置：一个变量配置所有账号
 

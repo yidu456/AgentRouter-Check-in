@@ -3,7 +3,8 @@
     "name": "agentrouter-trigger",
     "main": "src/worker.mjs",
     "compatibility_date": "2026-11-07",
-    "workers_dev": false,
+    "workers_dev": true,
+    "preview_urls": false,
     "keep_vars": true,
     "triggers": {
         "crons": ["5 16 * * *"]

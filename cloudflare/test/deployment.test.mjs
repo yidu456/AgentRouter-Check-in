@@ -37,7 +37,8 @@ test("deployment preserves dashboard vars without shipping runtime credentials o
     for (const key of ["vars", "account_id", "secrets", "env"]) {
         assert.equal(Object.hasOwn(config, key), false, `${key} must stay dashboard-managed`);
     }
-    assert.equal(config.workers_dev, false);
+    assert.equal(config.workers_dev, true);
+    assert.equal(config.preview_urls, false);
     assert.equal(Object.hasOwn(config, "routes"), false);
 });
 
@@ -110,7 +111,7 @@ test("the Worker imports without files or dependencies outside the cloned subdir
     try {
         cpSync(new URL("src/", packageRoot), join(isolated, "src"), { recursive: true });
         const { default: worker } = await import(pathToFileURL(join(isolated, "src", "worker.mjs")));
-        assert.equal((await worker.fetch(new Request("https://trigger.invalid/"), {})).status, 404);
+        assert.equal((await worker.fetch(new Request("https://trigger.invalid/"), {})).status, 200);
         await worker.scheduled({ scheduledTime: Date.UTC(2026, 10, 7, 16, 5) }, {});
     } finally {
         assert.equal(dirname(isolated), tempRoot);

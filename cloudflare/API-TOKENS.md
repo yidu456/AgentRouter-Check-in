@@ -2,17 +2,28 @@
 
 本指南只说明如何配置，不会替你创建凭据、调用真实 dispatch 或修改仓库默认分支。先部署空目标或 `enabled: false` 的触发器，最后再启用。
 
-## 1. 先分清三种授权
+已有 Worker 可能保留数据库开关；`enabled: false` 示例不是覆盖数据库 true 的停用保证。更新已有项目需先查看管理页有效状态；需要确保所有目标停用时，保存空 `targets` 列表并发布，不要清空数据库。
+
+## 1. 先分清授权与访问凭证
 
 | 凭据 / 授权 | 从哪里获得 | 用途 | 放在哪里 |
 | --- | --- | --- | --- |
 | Cloudflare GitHub App 连接 | Cloudflare 连接 GitHub 仓库时授权 | 读取触发器源码、跟随源码提交构建 | Cloudflare Git connection；不是运行时 Secret |
 | Cloudflare API Token / build token | Workers Builds 自动创建，或 Cloudflare API Tokens 页面创建 | 将 Worker、绑定和 Cron 部署到 Cloudflare | Worker 的 Build 设置中的 API token；不是 `GITHUB_TOKEN_A` |
 | GitHub fine-grained PAT | 目标 GitHub 账号的 Settings → Developer settings | Worker 请求目标仓库的 GitHub Actions `workflow_dispatch` | Cloudflare **运行时** Secret，例如 `GITHUB_TOKEN_A` |
+| 管理页访问 Token（可选） | 自己生成独立随机值，不在 GitHub 或 Cloudflare API 页面申请 | 查看仓库、开关、日程、调度日志和确认后手动触发 | Cloudflare **运行时** Secret `DEBUG_ACCESS_TOKEN` |
 
-**本触发器在运行时只需要 GitHub PAT，不需要 Cloudflare API Token。** GitHub App 的源码连接不会自动赋予 Actions 触发权限；Cloudflare build token 也不能用来调用 GitHub。
+**自动调度在运行时需要 GitHub PAT，不需要 Cloudflare API Token。** GitHub App 的源码连接不会自动赋予 Actions 触发权限；Cloudflare build token 也不能用来调用 GitHub。管理页另用独立访问 Token，不能拿 GitHub PAT 当页面密码。
 
 `TRIGGER_CONFIG` 是普通 JSON 配置，不是令牌。账号密码、代理订阅和通知密钥仍保留在各签到仓库的 GitHub Secret `CHECKIN_CONFIG`。
+
+### 可选管理页访问 Token
+
+在自己电脑运行 `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"`，把输出作为运行时 **Secret** `DEBUG_ACCESS_TOKEN` 保存并发布。只接受 32～128 个字母、数字、`_`、`-`，不要重用其他凭据，也不要把真实值贴到聊天或提交到 Git。
+
+访问 `https://你的Worker域名/#token=随机值`；`#token=` 不随首页请求传到服务器，页面立即清除地址栏 fragment，再用请求头鉴权。Token 只在页面内存中，刷新需重新打开原链接。没有配置、留空或格式错误则管理功能关闭，自动调度不因此停用。删除/轮换 Secret 会撤销原链接的操作权限。普通首页仍公开脱敏状态，不能看到仓库详情。
+
+完整链接也属于凭据，避免公开分享、同步书签或截图。管理 Token 持有者可启停和手动触发所有配置目标，并删除显示日志；它不是只读权限。数据库和开关优先级见 [管理页说明](README.md#管理页与数据库可选)。
 
 ## 2. 创建 GitHub fine-grained PAT（必需）
 
@@ -69,7 +80,7 @@ Fine-grained PAT 当前不支持“另一个用户个人仓库的协作者”和
       "id": "github_a",
       "repository": "yidu456/AgentRouter-Check-in",
       "workflow": "Checkin.yml",
-      "ref": "dev-plus",
+      "ref": "main",
       "token_secret": "GITHUB_TOKEN_A",
       "enabled": false
     },
@@ -77,7 +88,7 @@ Fine-grained PAT 当前不支持“另一个用户个人仓库的协作者”和
       "id": "github_b",
       "repository": "another-owner/AgentRouter-Check-in",
       "workflow": "Checkin.yml",
-      "ref": "dev-plus",
+      "ref": "main",
       "token_secret": "GITHUB_TOKEN_B",
       "enabled": false
     }
@@ -90,6 +101,12 @@ Fine-grained PAT 当前不支持“另一个用户个人仓库的协作者”和
 **不要放错位置：** Build variables and secrets 只供构建使用，定时 Worker 读不到它们；GitHub Actions Secrets 里的同名变量也不会自动传给 Worker。Cloudflare 的 `GITHUB_TOKEN_A` 不是 GitHub Actions 自动生成的临时 `GITHUB_TOKEN`。
 
 后续 `keep_vars: true` 保留面板的普通变量，Wrangler 部署也不会删除已有 Secrets。保留不等于备份；不要因为重新部署而假定目标已经停用。
+
+## 可选：企业微信 Webhook Secret
+
+企业微信群 → 创建普通群机器人 → 复制 Webhook；在 Worker 的运行时 **Variables & Secrets** 添加 **Secret** `WECOM_WEBHOOK_URL` 并发布。URL 必须是完整的 `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...`，仅支持该官方主机和单个 key 参数。
+
+这不是 GitHub PAT，也不是 Cloudflare build token；只用于 Cloudflare 调度结果通知。首页显示未配置、格式不合法或已配置，但不会请求机器人验证。不要把 Webhook 写进 JSON、日志、截图或聊天；已有 GitHub 最终签到通知不受这个可选设置影响。
 
 ## 4. Cloudflare 构建页 API token 怎么处理
 
@@ -118,10 +135,10 @@ Fine-grained PAT 当前不支持“另一个用户个人仓库的协作者”和
 ## 5. 启用前检查，不用真实 dispatch 验证令牌
 
 1. 在 GitHub Token 列表核对 Resource owner、Selected repositories、Actions Read and write、有效期及组织审批。这是配置检查，不是成功触发证明。
-2. 在目标签到仓库确认 `.github/workflows/Checkin.yml` 已在默认分支注册，并声明 `workflow_dispatch`；`dev-plus` 中也要有可运行的对应工作流。
+2. 在目标签到仓库确认 `.github/workflows/Checkin.yml` 已在默认分支注册，并声明 `workflow_dispatch`；`main` 中也要有可运行的对应工作流。
 3. 在 Cloudflare 核对 Secret 的**名称和类型**，以及 JSON 的 `repository`、`workflow`、`ref`、`token_secret`。不要把 Token 值复制出来检查或截图。
 4. 另行确认并关闭默认分支旧的 `on.schedule`，保留 `workflow_dispatch`。不要在 Actions 界面禁用整个工作流。
-5. 在明确允许真实签到后再把所需目标设为 `enabled: true` 并发布。首次安排等待北京时间 00:05 初始化 Cron，不会因为保存 Token 或配置就立即签到。
+5. 在明确允许真实签到后，在管理页开启所需目标；已有数据库开关时，改 JSON `enabled` 不会覆盖它。没有数据库覆盖时可把 JSON 设为 `enabled: true` 并发布，等待北京时间 00:05 初始化 Cron；管理页开启则会按时间规则建立/恢复日程。两者都不会立即签到，手动运行需另外点击确认。
 
 仅做读取工作流的 API 检查，即使返回 200，也不能证明 Token 有 dispatch 写权限。不要用真实 `POST .../dispatches` 当作无副作用的连通性测试；它会启动真实工作流、登录并可能发送通知。
 
@@ -143,7 +160,7 @@ Fine-grained PAT 当前不支持“另一个用户个人仓库的协作者”和
 | `DISPATCH_HTTP_403` | Actions 写权限、持有者权限、组织审批/政策，以及可能的 GitHub 限流 | 不要直接改用全仓库管理员权限 |
 | `DISPATCH_HTTP_404` | Token 的 owner / 选定仓库、私有仓库访问权、`Checkin.yml` 名称和默认分支注册 | 404 不一定表示仓库真的不存在 |
 | `DISPATCH_HTTP_422` | `ref` 是否存在、对应工作流是否能手动触发、是否另有必填 inputs | 不要只改 Cloudflare Production branch |
-| 保存 Token 后没有运行 | `enabled` 是否仍为 false、是否已发布运行时配置、是否已到初始化 Cron | 不要把安全默认停用当作 Token 创建失败 |
+| 保存 Token 后没有运行 | 管理页有效开关（不能只看 JSON `enabled`）、运行时配置是否已发布、日程是否已初始化 | 不要把安全默认停用或等待日程当作 Token 创建失败 |
 | `DISPATCH_UNKNOWN` | 到目标仓库 Actions 核对是否已启动，再人工决定是否补跑 | 不要因超时立即重发，可能已送达 |
 
 返回 [部署、分支与完整配置指南](README.md)。
