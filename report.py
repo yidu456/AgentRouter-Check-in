@@ -1,4 +1,5 @@
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -34,6 +35,7 @@ FAILURE_STAGES = {
     "JOB_MISSING",
     "REPORT_INVALID",
     "PREPARE_FAIL",
+    "RANDOM_POOL_FAIL",
 }
 STAGES = FAILURE_STAGES | {"SUCCESS"}
 
@@ -78,7 +80,7 @@ def _validate_group(value):
 
 
 def _validate_manifest(value):
-    if not isinstance(value, dict) or set(value) != {"version", "groups"}:
+    if not isinstance(value, dict) or not {"version", "groups"} <= set(value) or set(value) - {"version", "groups", "random"}:
         _invalid()
     if type(value["version"]) is not int or value["version"] != 1:
         _invalid()
@@ -95,6 +97,15 @@ def _validate_manifest(value):
         len(groups) != 1 or legacy_groups[0].get("os") != "ubuntu-24.04"
     ):
         _invalid()
+    if "random" in value:
+        if legacy_groups:
+            _invalid()
+        from subscription_pool import validate_plan
+
+        try:
+            validate_plan(value["random"])
+        except Exception:
+            _invalid()
 
     group_ids = set()
     account_ids = set()
@@ -112,7 +123,7 @@ def _validate_results(rows, expected_ids):
 
     seen = set()
     for row in rows:
-        if not isinstance(row, dict) or set(row) != RESULT_KEYS:
+        if not isinstance(row, dict) or not RESULT_KEYS <= set(row) or set(row) - (RESULT_KEYS | {"exit_ip"}):
             _invalid()
         account_id = row["id"]
         quota = row["quota"]
@@ -126,10 +137,19 @@ def _validate_results(rows, expected_ids):
         ):
             _invalid()
         if stage == "SUCCESS":
-            if type(quota) is not int or quota < 0:
+            if type(quota) is not int or not 0 <= quota <= 2**63 - 1:
                 _invalid()
         elif quota is not None:
             _invalid()
+        exit_ip = row.get("exit_ip")
+        if exit_ip is not None:
+            if not isinstance(exit_ip, str) or len(exit_ip) > 45 or "%" in exit_ip:
+                _invalid()
+            try:
+                if str(ipaddress.ip_address(exit_ip)) != exit_ip:
+                    _invalid()
+            except ValueError:
+                _invalid()
         seen.add(account_id)
 
     if seen != set(expected_ids):
@@ -144,7 +164,7 @@ def _safe_report(manifest_group, rows):
         "group_id": manifest_group["group_id"],
         "os": manifest_group["os"],
         "results": [
-            {"id": row["id"], "quota": row["quota"], "stage": row["stage"]}
+            {key: row[key] for key in ("id", "quota", "stage", "exit_ip") if key in row}
             for row in rows
         ],
     }
@@ -175,7 +195,7 @@ def _read_group_report(path, manifest_group):
     return value["results"]
 
 
-def combine_reports(manifest: dict, reports_dir: Path) -> list[tuple[str, str | None, str]]:
+def combine_reports(manifest: dict, reports_dir: Path, details: bool = False) -> list:
     _validate_manifest(manifest)
     combined = []
     for manifest_group in manifest["groups"]:
@@ -199,11 +219,14 @@ def combine_reports(manifest: dict, reports_dir: Path) -> list[tuple[str, str | 
 
                     balance = format_balance(row["quota"])
                 group_rows.append(
-                    (f"{manifest_group['os']} {account_id}", balance, row["stage"])
+                    (f"{manifest_group['os']} {account_id}",
+                     {"quota": row["quota"], "balance": balance, "exit_ip": row.get("exit_ip")} if details else balance,
+                     row["stage"])
                 )
         except Exception:
             group_rows = [
-                (f"{manifest_group['os']} {account_id}", None, "REPORT_INVALID")
+                (f"{manifest_group['os']} {account_id}",
+                 {"quota": None, "balance": None, "exit_ip": None} if details else None, "REPORT_INVALID")
                 for account_id in manifest_group["account_ids"]
             ]
         combined.extend(group_rows)
@@ -249,6 +272,27 @@ def _send_rows(rows, notification_config):
         print("NOTIFY_FAIL", file=sys.stderr)
 
 
+def observe_balances(rows: list, config: dict, history_path: Path | None = None) -> list:
+    from account_observations import apply_history, load_history, save_history
+    from routing import RUNNERS
+
+    accounts = {f"{RUNNERS[a['os']]} {a['id']}": a for a in config["accounts"]}
+    history = load_history(history_path) if history_path is not None else {"version": 1, "balances": {}}
+    enriched, updated = apply_history(rows, accounts, history)
+    if history_path is not None:
+        try:
+            history_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if not save_history(history_path, updated):
+                raise OSError("HISTORY_SAVE_FAIL")
+            output_path = os.environ.get("GITHUB_ENV")
+            if output_path:
+                with open(output_path, "a", encoding="utf-8") as stream:
+                    stream.write("BALANCE_HISTORY_READY=true\n")
+        except OSError:
+            print("HISTORY_SAVE_FAIL", file=sys.stderr)
+    return enriched
+
+
 def _notify(manifest_path, reports_dir):
     prepare_succeeded = os.environ.get("PREPARE_RESULT") == "success"
     try:
@@ -275,7 +319,10 @@ def _notify(manifest_path, reports_dir):
             public_manifest = build_manifest(config["accounts"])
         else:
             public_manifest = _load_manifest(manifest_path)
-        rows = combine_reports(public_manifest, reports_dir)
+        rows = combine_reports(public_manifest, reports_dir, details=config is not None)
+        if config is not None:
+            history_path = os.environ.get("BALANCE_HISTORY_PATH")
+            rows = observe_balances(rows, config, Path(history_path) if history_path else None)
     except Exception:
         print("REPORT_INVALID", file=sys.stderr)
         rows = [("Manifest", None, "REPORT_INVALID")]

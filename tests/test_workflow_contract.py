@@ -49,6 +49,19 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("python tests/smoke.py", source)
         self.assertNotIn("secrets.", source)
 
+    def test_random_plan_stays_worker_local_and_history_is_final_branch_scoped(self):
+        planner = self.source.split("  plan:", 1)[1].split("  checkin:", 1)[0]
+        worker = self.source.split("  checkin:", 1)[1].split("  notify:", 1)[0]
+        notify = self.source.split("  notify:", 1)[1].split("  maintenance:", 1)[0]
+        self.assertNotIn("secrets.", planner)
+        self.assertIn("RANDOM_PLAN: ${{ env.RANDOM_PLAN }}", worker)
+        self.assertNotIn("checkin-history", worker)
+        self.assertIn("actions/cache/restore@v5", notify)
+        self.assertIn("actions/cache/save@v5", notify)
+        self.assertIn("${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}", notify)
+        self.assertIn("if: always() && env.BALANCE_HISTORY_READY == 'true'", notify)
+        self.assertIn("BALANCE_HISTORY_PATH: .superpowers/checkin-history/balances.json", notify)
+
 
 if __name__ == "__main__":
     unittest.main()

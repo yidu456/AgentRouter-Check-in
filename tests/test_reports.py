@@ -35,6 +35,11 @@ def result(account_id="a01", quota=500000, stage="SUCCESS"):
     return {"id": account_id, "quota": quota, "stage": stage}
 
 
+def details(quota=None):
+    return {"quota": quota, "balance": f"{quota / 500000:.2f}$" if quota is not None else None,
+            "exit_ip": None, "previous_quota": None}
+
+
 def write_raw_report(root, value, group_id="g01"):
     path = Path(root) / f"checkin-results-{group_id}" / "result.json"
     path.parent.mkdir(parents=True)
@@ -355,6 +360,7 @@ class NotifyCliTests(unittest.TestCase):
         self.fake_routing = types.SimpleNamespace(
             parse_config=routing.parse_config,
             build_manifest=routing.build_manifest,
+            RUNNERS=routing.RUNNERS,
         )
 
     def run_notify(self, public_manifest, report_value=None, env=None):
@@ -405,7 +411,7 @@ class NotifyCliTests(unittest.TestCase):
                 self.app_calls.clear()
                 code, stderr = self.run_notify(public, value, {"CHECKIN_CONFIG": json.dumps(config)})
                 self.assertEqual(code, 0, stderr)
-                self.assertEqual(self.app_calls[0], ("format", [("ubuntu-24.04 a01", "1.00$", "SUCCESS")], 1, 1))
+                self.assertEqual(self.app_calls[0], ("format", [("ubuntu-24.04 a01", details(500000), "SUCCESS")], 1, 1))
                 self.assertEqual([call[0] for call in self.app_calls].count("send"), 1)
                 self.assertNotIn("credential-marker", stderr + repr(self.app_calls))
 
@@ -413,7 +419,7 @@ class NotifyCliTests(unittest.TestCase):
         code, stderr = self.run_notify(None)
         self.assertEqual(code, 1, stderr)
         self.assertEqual(len(self.app_calls), 2)
-        self.assertEqual(self.app_calls[0], ("format", [("ubuntu-24.04 a01", None, "JOB_MISSING")], 0, 1))
+        self.assertEqual(self.app_calls[0], ("format", [("ubuntu-24.04 a01", details(), "JOB_MISSING")], 0, 1))
         self.assertEqual([call[0] for call in self.app_calls].count("send"), 1)
 
     def test_legacy_missing_or_corrupt_manifest_still_sends_safe_final_failure(self):
@@ -493,9 +499,9 @@ class NotifyCliTests(unittest.TestCase):
             (
                 "format",
                 [
-                    ("ubuntu-24.04 a01", None, "REPORT_INVALID"),
-                    ("ubuntu-24.04 a02", None, "REPORT_INVALID"),
-                    ("macos-15 b01", "0.00$", "SUCCESS"),
+                    ("ubuntu-24.04 a01", details(), "REPORT_INVALID"),
+                    ("ubuntu-24.04 a02", details(), "REPORT_INVALID"),
+                    ("macos-15 b01", details(0), "SUCCESS"),
                 ],
                 1,
                 3,

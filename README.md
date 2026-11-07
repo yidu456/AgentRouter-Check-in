@@ -8,7 +8,8 @@
 - ✅ 多账号 / 多站点支持：`ACCOUNTS` 多行配置（可带站点前缀），逐账号顺序签到，汇总 Telegram 通知
 - ✅ 新模式：一个 `CHECKIN_CONFIG` 变量配置所有账号、系统、代理列表和通知
 - ✅ 固定系统分组：Ubuntu / Windows / macOS，每组最多 3 个账号
-- ✅ 每账号 1～N 个代理，按顺序尝试，首次成功后停止；新模式不回退免费代理或直连
+- ✅ 每账号 1～N 个代理，支持订阅随机候选、全系统本轮不重复分配；按顺序尝试，首次成功后停止
+- ✅ 新模式通知显示上次成功余额、净变化、当前余额及实测代理出口 IP
 - ✅ 统一使用 Xray 内核；旧模式优先自有节点，失败自动回退免费代理池
 - ✅ 代理池 WAF 探测：随机抽样并发检测 IP 是否触发阿里云 WAF（按站点独立探测）
 - ✅ 所有分组结束后统一汇总到 Telegram / 企业微信群机器人（均可选）
@@ -73,8 +74,9 @@
 - 每个账号的 `id` 必须唯一，以字母开头、最多 32 个字母/数字/下划线/短横线；请勿把邮箱或密钥作为 ID，它会显示在任务和通知中。
 - `os` 只能为 `ubuntu`、`windows`、`macos`，对应固定标签 `ubuntu-24.04`、`windows-2022`、`macos-15`（ARM64）。`macos-14` 已退役，不再使用。同系统账号按 ID 排序，每组最多 3 个；不同分组使用独立 Runner。同一账号不会每天随机更换系统。
 - `site` 可省略，默认 `https://agentrouter.org`。JSON 密码完整保留，包括冒号、竖线和两端空格。
-- `proxies` 必须配置 1～N 个候选。每个候选只写 `node` 或 `link`，不能同时写。`node` 使用共用订阅中的节点名称；`link` 为完整节点分享链接，无须订阅。只使用直接链接时可省略 `subscription_url`。
-- 订阅名称来自分享链接的 `#名称`（URL 解码后），VMess 可使用 `ps`；订阅中重名节点会被拒绝。节点引用、相同直接链接不能重复分配给多个账号。
+- `proxies` 必须配置 1～N 个候选。每个候选只写 `node`、`link` 或 `random` 中的一项，不能同时写。`node` 使用共用订阅中的节点名称；`link` 为完整节点分享链接，无须订阅。只使用直接链接时可省略 `subscription_url`。
+- 订阅名称来自分享链接的 `#名称`（URL 解码后），VMess 可使用 `ps`；配置了 `node` 引用时，订阅重名节点会被拒绝；纯随机配置不依赖名称。节点引用、相同直接链接不能重复分配给多个账号。
+- `{"random": 2}` 表示从顶层 `subscription_url` 分配两个随机候选；可混合固定节点，固定绑定先排除。全账号、跨系统/分组本轮不重复分配；每轮重新抽取，候选不足或有效池改变报 `RANDOM_POOL_FAIL`，不临时重抽/共享。订阅命名和排序可变，但仍需链接列表格式。
 - 每次从列表第一个候选开始，失败后关闭浏览器并尝试该账号下一个候选。首次成功即停止，不会为了遍历代理再次登录。全部失败只影响该账号，不使用未配置节点、免费代理或直连。
 - 每次失败会输出 `账号ID attemptN: 安全阶段码`；已尝试的候选全部失败时，报告保留最后一次失败阶段，而不是一律覆盖成 `PROXY_LIST_EXHAUSTED`。没有可尝试候选时仍使用该汇总码。导航失败只输出白名单内的 Chromium 网络错误码，不输出原始异常、URL 或节点信息。
 - 当前支持明文/base64/base64url 的节点链接订阅及 vless、vmess、trojan、hysteria2/hy2、socks5/socks。不是任意 Clash YAML / sing-box JSON 订阅都能解析；不支持的节点会报告失败，不会静默降级 TLS。
@@ -86,11 +88,13 @@
 
 ### 最终汇总通知
 
-全部系统分组成功、失败或超时结束后，`notify` 任务才汇总发送；账号和分组执行期间不发送消息。缺失或损坏的报告计入失败，不会默认为成功。汇总只包含公开 ID、系统、余额和安全状态码，不包含账号密码、代理链接或响应详情。
+全部系统分组成功、失败或超时结束后，`notify` 任务才汇总发送；账号和分组执行期间不发送消息。缺失或损坏的报告计入失败，不会默认为成功。新模式汇总包含公开 ID、系统、上次成功余额、净变化、当前余额、实测代理出口 IP 和安全状态码，不包含密码、代理链接或响应详情。净变化可能包含消费/充值，不等于签到奖励；初次/丢失历史显示未知，登录失败不覆盖成功基线。
 
 新模式从完整校验后的配置确定预期分组；即使汇总清单下载失败，也能按预期账号恢复汇总。旧模式无法恢复清单时，只发送安全的清单异常通知。所有分支共用一个签到并发锁，避免默认分支定时任务与开发分支手动任务同时登录同一批账号。
 
 工作流按 `prepare → plan → checkin → notify` 执行。读取凭据的 `prepare` 只上传安全清单，不发送跨任务输出；独立的 `plan` 不引用账号 Secrets，矩阵只含系统和数字槽位。账号 ID 在签到任务内从清单校验后读取，避免完整配置与矩阵输出重叠而被 GitHub 的 Secrets 保护丢弃。矩阵缺失时不会启动登录，最终汇总仍将缺失的账号报告计入失败。
+
+余额历史由最终任务按分支保存到 Actions 缓存，本地新模式保存在 `.superpowers/checkin-history/balances.json`；仅记录身份摘要和整数余额，不保存密码或 IP。摘要不保证匿名，缓存/artifact/机器人接收者仍可能看到或关联余额和活动。出口 IP 通过实际使用代理查询；失败显示未获取，不直连，不影响登录。轮转/分流代理可能使站点实际看到不同 IP。详见配置手册第 12 节。
 
 企业微信使用普通**群机器人 Webhook**：在群内创建机器人，将完整地址放入 `notifications.wecom.webhook_url`。Telegram 使用 `notifications.telegram.bot_token` 和 `chat_id`。可配置任意一个、两个或都不配置。
 
@@ -113,7 +117,7 @@
 ```sh
 python -m pip install requests playwright==1.64.1 pynacl pysocks
 python -m unittest discover -s tests -v
-python -m py_compile app.py routing.py proxy_runtime.py legacy_proxy.py report.py
+python -m py_compile app.py routing.py proxy_runtime.py legacy_proxy.py report.py subscription_pool.py account_observations.py
 bash -n setup-proxy.sh
 python -m playwright install chromium
 python tests/smoke.py

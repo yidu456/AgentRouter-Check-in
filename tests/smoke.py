@@ -11,12 +11,14 @@ import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app
 from proxy_runtime import check_outbound, download_binary, group_proxy, parse_node_link
-from routing import DEFAULT_PROFILE
+from routing import DEFAULT_PROFILE, RUNNERS, build_manifest, parse_config
+from subscription_pool import make_plan, resolve_random_accounts
 
 
 LOGIN_PAGE = (Path(__file__).parent / "fixtures" / "login_options.html").read_bytes()
@@ -186,6 +188,23 @@ def main():
                 "type": "socks", "server": "127.0.0.1",
                 "server_port": socks.server_address[1], "version": "5",
             }}
+            os_key = {"Linux": "ubuntu", "Windows": "windows", "Darwin": "macos"}[platform.system()]
+            config = parse_config(json.dumps({"version": 1, "subscription_url": "https://subscription.example/sub",
+                "accounts": [{"id": "random_smoke", "site": f"http://127.0.0.1:{fixture.server_address[1]}",
+                    "username": "smoke-user", "password": "smoke-secret", "os": os_key,
+                    "proxies": [{"random": 1}]}]}))
+            pool = list(outbounds.values())
+            plan = make_plan(config, {}, pool, seed="a" * 32)
+            routes = resolve_random_accounts(config, plan, {}, pool)
+            group = build_manifest(config["accounts"])["groups"][0]
+            assert group["os"] == RUNNERS[os_key]
+            result_path = Path(directory) / "random-result.json"
+            with patch("proxy_runtime.download_binary", return_value=binary), \
+                    patch("account_observations.query_exit_ip", return_value="203.0.113.10"):
+                assert app.run_isolated_group(routes, group, result_path) == 0, "RANDOM_GROUP_FAIL"
+            random_result = json.loads(result_path.read_text(encoding="utf-8"))["results"][0]
+            assert random_result == {"id": "random_smoke", "quota": 500000,
+                                     "stage": "SUCCESS", "exit_ip": "203.0.113.10"}
             with group_proxy(outbounds, binary, Path(directory)) as endpoints:
                 endpoint = endpoints["a01_p01"]
                 check_browser_profile(endpoint)
@@ -211,7 +230,7 @@ def main():
                     else:
                         raise AssertionError("UNLISTED_DIRECT_FALLBACK")
                 assert fixture.requests_seen == before
-        print(f"PASS native {platform.system()}: isolated fixture login and no direct fallback")
+        print(f"PASS native {platform.system()}: random/isolated fixture login, safe IP report and no direct fallback")
     finally:
         socks.shutdown()
         socks.server_close()

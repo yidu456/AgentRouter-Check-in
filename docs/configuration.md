@@ -26,7 +26,7 @@
 - 同一个对象不能重复写同名键；不能添加下文未支持的字段。
 - 缺省值通过省略字段获得；不要用 `null`、空字符串或错误类型代替省略。
 - 布尔值、数字、字符串不是同一种类型。例如 `1`、`"1"`、`true` 不可随意替换。
-- 最多生成 256 个账号组；每组最多 3 个账号。全部账号的代理候选总数不超过 47456，实际通常先受到 Secret 大小限制。
+- 最多生成 256 个账号组；每组最多 3 个账号。全部账号展开后的代理候选总数不超过 47456（`{"random": 2}` 按两个候选计数），实际通常先受到 Secret 大小限制。
 
 ## 2. 顶层字段：只支持四项
 
@@ -34,7 +34,7 @@
 | --- | --- | --- | --- | --- |
 | `version` | 整数 | 是 | 当前只能是整数 `1`，不能是 `"1"`、`1.0`、`true` | `"version": 1` |
 | `accounts` | 对象数组 | 是 | 至少一个完整账号对象，不能为 `[]` | 见第 3 节和完整场景示例 |
-| `subscription_url` | 字符串 | 有 `node` 引用时必填 | 有效 HTTPS 订阅地址；仅使用 `link` 时可省略 | `"https://subscription.example.com/sub?format=links"` |
+| `subscription_url` | 字符串 | 有 `node` 或 `random` 时必填 | 有效 HTTPS 订阅地址；仅使用 `link` 时可省略 | `"https://subscription.example.com/sub?format=links"` |
 | `notifications` | 对象 | 否 | 省略或 `{}` 表示不配置通知；支持 `telegram`、`wecom` | 见第 6 节 |
 
 不能在顶层添加 `proxy`、`browser`、`xray`、`runner`、`retry`、`user_agent` 等字段。也不能把 Xray 的 `inbounds/outbounds/routing` JSON 当作本项目配置。
@@ -49,7 +49,7 @@
 | `username` | 字符串 | 是 | 非空且不能只有空白；通常填写登录邮箱，原样保留 | `"user1@example.com"` |
 | `password` | 字符串 | 是 | 非空字符串，原样保留冒号、竖线及前后空格 | `"example:secret|value"` |
 | `os` | 字符串 | 是 | 只能是 `"ubuntu"`、`"windows"`、`"macos"` | `"macos"` |
-| `proxies` | 对象数组 | 是 | 至少一个候选，每个候选只能填写 `node` 或 `link` 中的一项 | 见第 4 节 |
+| `proxies` | 对象数组 | 是 | 至少一个候选，每个候选只能填写 `node`、`link`、`random` 中的一项 | 见第 4 节 |
 | `site` | 字符串 | 否 | 默认 `"https://agentrouter.org"`；支持 HTTP/HTTPS 站点和可选路径前缀 | `"https://panel.example.com"` |
 | `profile` | 对象 | 否 | 省略或 `{}` 使用默认基本浏览器配置 | 见第 5 节 |
 
@@ -82,6 +82,7 @@
 | --- | --- | --- | --- |
 | `link` | 非空字符串 | 完整节点分享链接，不是订阅地址 | 支持的协议见第 8 节；不能有前后空白 |
 | `node` | 非空字符串 | 共用订阅中节点的名称 | 顶层必须有 `subscription_url`；名称不能有前后空白 |
+| `random` | 正整数 | 从订阅随机分配几个候选 | 顶层必须有 `subscription_url`；允许 1～47456，还受全局展开候选上限和实际可用节点数限制；不接受布尔值、小数或字符串 |
 
 合法的局部示例：
 
@@ -118,6 +119,44 @@
 同一 `node` 名称或同一直接链接身份不能重复出现在同一配置的任何账号中。直接链接的 `#备注` 不参与身份比较；只改备注不算换节点。
 
 这些检查不能保证实际出口 IP 不重复，也不能可靠识别“同一真实节点分别以 `node` 和 `link` 引用”等所有情况；请自行确保账号绑定了所需的独立节点和出口。
+
+### 随机候选：不依赖订阅中的名称
+
+```json
+{
+  "proxies": [
+    {"link": "socks5://fixed.example.com:1080#fixed-first"},
+    {"random": 2}
+  ]
+}
+```
+
+该局部示例需要完整账号字段和顶层 `subscription_url`。先尝试固定节点，再按本轮分配顺序尝试最多两个随机候选；首次登录成功就停止。多个 `random` 项可混用，计数相加，展开位置保留。
+
+- `prepare` 获取订阅并生成本轮随机种子及带密钥的池指纹；每个 worker 再取一次实际订阅，验证一致后按全局账号 ID 顺序重建同一分配。不是各系统各自随便抽取。
+- 先移除全配置所有 `link` / `node` 固定绑定；随机池按校验后的节点配置去重，全账号、全部系统、全部分组之间不重复分配候选，即使其中某个候选没有被实际使用，也不借给其他账号。
+- 纯随机配置允许没有名称、重名、改名或订阅排序变化。无效/不支持的节点会被跳过；只从本项目可转换为 Xray 的有效节点中抽取。订阅仍必须是明文/base64/base64url 链接列表，**不支持把 Clash YAML / sing-box JSON 当随机池**。
+- 混有 `node` 时仍按严格名称规则解析；重名订阅、固定名称消失、两个固定绑定解析为同一配置、无法校验固定绑定、候选不足，都安全失败，不能忽略固定绑定继续抽取。
+- 准备后实际有效节点池或完整配置发生变化，worker 报 `RANDOM_POOL_FAIL`，不登录、不重抽、不共享节点、不回退直连。新运行才重新抽取。固定名称配置改变即使仅是改名，也不能像纯随机配置那样忽略。
+- 随机订阅响应最大 4 MiB，网络请求设置超时。准备清单仅新增种子和带密钥的指纹，不包含节点名、地址、链接、认证或 Xray 配置。指纹是完整性绑定，不是节点加密。
+- 去重和隔离基于可识别的有效节点配置，不保证不同节点有不同出口 IP，也不保证新运行必然抽到不同节点。
+
+完整三系统示例（至少需要六个互不重复的有效随机节点）：
+
+```json
+{
+  "version": 1,
+  "subscription_url": "https://subscription.example.com/sub?format=links",
+  "notifications": {
+    "wecom": {"webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=example-key"}
+  },
+  "accounts": [
+    {"id": "random_ubuntu", "username": "one@example.com", "password": "example-one", "os": "ubuntu", "proxies": [{"random": 2}]},
+    {"id": "random_mac", "username": "two@example.com", "password": "example-two", "os": "macos", "proxies": [{"random": 2}]},
+    {"id": "random_windows", "username": "three@example.com", "password": "example-three", "os": "windows", "proxies": [{"random": 2}]}
+  ]
+}
+```
 
 ## 5. `profile`：可固定的基本浏览器配置
 
@@ -544,8 +583,8 @@ socks5://example-user:example%3Asecret%40value@node.example.com:1080#socks-encod
 | `"os": "macos-15"` | 填 `"macos"`，Runner 标签由程序生成 |
 | `"id": "01user"` | ID 必须以英文字母开头 |
 | `"proxies": []` | 至少一个候选 |
-| 一个候选同时写 `node` 和 `link` | 每个对象只能有一个键；拆成两个候选 |
-| 有 `node` 但无订阅地址 | 填顶层 `subscription_url`，或改用完整 `link` |
+| 一个候选同时写 `node`、`link` 或 `random` | 每个对象只能有一个键；拆成不同候选 |
+| 有 `node` / `random` 但无订阅地址 | 填顶层 `subscription_url`，或改用完整 `link` |
 | `"profile": null` | 省略，或填写 `{}` |
 | `"device_scale_factor": 1.5` | 仅允许整数 1/2 |
 | 屏幕小于视口、`viewport` 少了高度 | 宽高均必填，且屏幕各维不小于视口 |
@@ -574,7 +613,8 @@ socks5://example-user:example%3Asecret%40value@node.example.com:1080#socks-encod
 | `WAF_TIMEOUT` | WAF/页面就绪启发式检查超时，不足以认定一定被 WAF 拦截；程序不保证绕过网站风控 |
 | `FORM_NOT_FOUND` / `FORM_OPERATE_TIMEOUT` | 无适配入口/表单/输入或提交控件，或表单操作阶段超时；见下节 |
 | `USER_API_FAIL` / `API_PAYLOAD_FAIL` | 登录后用户 API 失败或数据结构不符，不能仅凭此码断定账号密码错误 |
-| `QUOTA_INVALID` | 余额字段不是可接受的非负整数，或接口格式不符 |
+| `QUOTA_INVALID` | 余额不是 0～9223372036854775807 的整数（布尔值不算整数），或接口格式不符 |
+| `RANDOM_POOL_FAIL` | 随机池无法读取/校验、候选不足、固定绑定冲突或本轮配置/有效池不一致；不会启动登录 |
 | `PROXY_LIST_EXHAUSTED` | 没有可尝试候选；旧版本也用它覆盖所有登录失败，需新建当前分支运行取得详细阶段 |
 | `UNEXPECTED` / `UNKNOWN` | 未分类异常/未知阶段；不输出可能含凭据的原始异常 |
 | `UNFINISHED` / `JOB_MISSING` | 账号未完成或预期任务缺报告，例如超时/取消 |
@@ -624,7 +664,13 @@ mac01: WAF_TIMEOUT
 5. 该兼容内核不是最新安全基线。子进程强制禁用 MPTCP，并不代表所有后续修复都已包含；也不开放受已知 Hy2/gRPC CA 固定问题影响的 CA 固定字段。长期方案是配置有效证书、移除不安全选项后再升级内核。
 6. 已公开过的真实密码、订阅令牌、节点凭据和机器人密钥应及时轮换，不要只删除聊天中的文本。
 
-**离线字段检查不等于真实登录测试。** `routing.py prepare` 可在已设置环境变量的本地环境只解析配置并生成安全清单，不执行登录、订阅请求或机器人发送：
+**离线字段检查不等于真实登录测试。** 已设置环境变量后，这条命令只校验外层字段，成功仅输出固定标记，不打印配置、不联网、不生成凭据文件：
+
+```sh
+python -c "import os; from routing import parse_config; parse_config(os.environ['CHECKIN_CONFIG']); print('CONFIG_VALID')"
+```
+
+`routing.py prepare` 生成安全清单，不登录或发送消息。只有 `link` / `node` 时不请求订阅；配置了 `random` 时会真实获取订阅、验证候选容量并生成本轮计划，因此不能再把它当离线命令：
 
 ```sh
 python routing.py prepare --manifest manifest.json
@@ -635,3 +681,24 @@ python routing.py prepare --manifest manifest.json
 `python app.py` 和 **Ayrouter Daily Check-in** 都会进行真实账号操作，不能当作无副作用的语法检查。只有 **Credential-free platform smoke** 使用本地模拟站点和虚构凭据；GitHub 手动触发要求该工作流先存在于默认分支，仅开发分支存在时可能返回 404。
 
 开发分支验证请新建 **Run workflow** 并选 `dev-plus`；重跑旧失败任务仍使用旧提交。计划任务运行默认分支版本，不会因推送 `dev-plus` 自动采用新代码。
+
+
+## 12. 最终通知：历史余额、净变化、当前余额与出口 IP
+
+新模式无需增加 JSON 字段，两种通知渠道都显示相同信息。示例：
+
+```text
+✅ ubuntu-24.04 random_ubuntu: 登录成功
+  上次余额：10.00$
+  余额变化：+1.00$
+  当前余额：11.00$
+  代理出口 IP：203.0.113.10
+```
+
+- 上次余额来自**同账号上次成功运行时读取的余额**，不是本次登录前实时读取的余额。净变化 = 当前 quota - 上次 quota，500000 quota = 1 美元；用未舍入整数计算差值再显示两位小数。
+- 消费、充值、人工调整和其他客户端操作可能包含在净变化内，不能称作“签到奖励”。变化为负数时照实显示，例如 `-1.00$`；零余额也是成功的有效余额。
+- 首次运行、缓存丢失/过期/被清理、换分支、账号 ID/站点/用户名改变时，历史基线未知。修改密码不改变账号身份。登录失败不会覆盖该账号已有成功基线，当前余额显示“未获取”；其他账号成功数据仍保存。
+- Actions 的最终 `notify` 任务使用按分支区分的缓存，保存成功余额；本地新模式默认使用 `.superpowers/checkin-history/balances.json`。缓存和本地历史不是密码库，仅保存账号身份的 SHA-256 摘要及整数 quota，不保存用户名原文、密码、节点、机器人密钥或 IP。摘要不等于匿名化，已知或可猜测账号身份仍可被关联；缓存访问者还能看到余额。
+- 出口 IP 通过**最后尝试/成功使用的那个代理**请求 `https://api.ipify.org` 得到，经 IPv4/IPv6 校验后展示。不是节点服务器地址，也不是本地代理端口或 runner 的公网 IP。没有可尝试候选、查询失败、重定向或返回非法内容时显示“未获取”，不影响有效登录结果，不改为直连查询。
+- 查询设置连接/读取超时、限制响应大小，不重试或查询备用服务。它测量的是查询时的代理出口；轮转出口或按目标分流可能使站点实际看到不同 IP。程序不承诺 IP 唯一，也不宣称完全防关联。
+- 完整出口 IP 会进入本轮短期结果 artifact 和机器人最终通知；历史缓存不保存 IP。Actions artifact/cache 和机器人接收者可能看到余额及活动信息，不要将结果当作不含敏感信息的匿名数据。旧变量模式仍保留原有余额通知，不新增历史或 IP 查询。

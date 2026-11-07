@@ -251,6 +251,12 @@ def _proxy_list(value, subscription_url, references):
             link = _direct_link(candidate["link"])
             reference = ("link", _link_identity(link))
             normalized = {"link": link}
+        elif "random" in candidate:
+            count = candidate["random"]
+            if type(count) is not int or not 1 <= count <= MAX_CANDIDATES or not subscription_url:
+                _fail()
+            result.append({"random": count})
+            continue
         else:
             _fail()
         if reference in references:
@@ -342,7 +348,7 @@ def parse_config(raw: str) -> dict:
             if login_record in login_records:
                 _fail()
             proxies = _proxy_list(source["proxies"], subscription_url, references)
-            candidate_count += len(proxies)
+            candidate_count += sum(candidate.get("random", 1) for candidate in proxies)
             if candidate_count > MAX_CANDIDATES:
                 _fail()
             normalized_accounts.append(
@@ -401,7 +407,14 @@ def _prepare(manifest_path):
     if raw:
         if mode == "legacy":
             _fail()
-        manifest = build_manifest(parse_config(raw)["accounts"])
+        config = parse_config(raw)
+        manifest = build_manifest(config["accounts"])
+        from subscription_pool import has_random, load_pool, make_plan
+
+        if has_random(config["accounts"]):
+            require_names = any("node" in p for a in config["accounts"] for p in a["proxies"])
+            names, nodes = load_pool(config["subscription_url"], require_names=require_names)
+            manifest["random"] = make_plan(config, names, nodes)
     else:
         if mode == "isolated" or raw_present and os.environ.get("GITHUB_ACTIONS") != "true":
             _fail()
@@ -439,6 +452,8 @@ def _assign(manifest_path, slot, runner):
         _fail()
     values = {"GROUP_ID": group["group_id"], "CHECKIN_MODE": group["mode"], "RUNNER_KEY": runner,
               "ACCOUNT_IDS": json.dumps(group["account_ids"], ensure_ascii=True, separators=(",", ":"))}
+    if "random" in manifest:
+        values["RANDOM_PLAN"] = json.dumps(manifest["random"], separators=(",", ":"))
     with open(output_path, "a", encoding="utf-8") as stream:
         stream.write("".join(f"{key}={value}\n" for key, value in values.items()))
 

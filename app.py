@@ -362,13 +362,24 @@ def format_notifications(results: list, success_count: int, total: int) -> tuple
     message_lines = ["🎁 <b>自动签到通知</b>", ""]
     plain_lines = ["🎁 自动签到通知", ""]
     for label, balance, stage in results:
-        if balance is None:
+        if isinstance(balance, dict):
+            quota, previous = balance.get("quota"), balance.get("previous_quota")
+            status = "登录成功" if stage == "SUCCESS" else f"登录失败（{stage}）"
+            prefix = "✅ " if stage == "SUCCESS" else "❌ "
+            before = format_balance(previous) if previous is not None else "未知"
+            current = format_balance(quota) if quota is not None else "未获取"
+            delta = "未知"
+            if quota is not None and previous is not None:
+                delta = f"{(quota - previous) / 500000:+.2f}$"
+            suffix = (f": {status}\n  上次余额：{before}\n  余额变化：{delta}"
+                      f"\n  当前余额：{current}\n  代理出口 IP：{balance.get('exit_ip') or '未获取'}")
+        elif balance is None:
             suffix = f": 签到失败（{stage}）"
             prefix = "❌ "
         else:
             suffix = f": 余额 {balance}"
             prefix = "✅ "
-        message_lines.append(prefix + html.escape(label) + suffix)
+        message_lines.append(prefix + html.escape(label) + html.escape(suffix))
         plain_lines.append(prefix + label + suffix)
     footer = f"📊 成功 {success_count}/{total}"
     message_lines.extend(["", footer])
@@ -2093,13 +2104,14 @@ def _safe_login_result(result: dict | None, stage: str) -> tuple:
         return None, "UNEXPECTED"
     if result:
         quota = result.get("quota")
-        if type(quota) is int and quota >= 0:
+        if type(quota) is int and 0 <= quota <= 2**63 - 1:
             return quota, "SUCCESS"
         return None, "QUOTA_INVALID"
     return None, stage if isinstance(stage, str) and stage in STAGES and stage != "SUCCESS" else "UNEXPECTED"
 
 
-def checkin_assigned_account(account: dict, candidates: list[dict], profile: dict) -> tuple:
+def checkin_assigned_account(account: dict, candidates: list[dict], profile: dict,
+                             observations: dict | None = None) -> tuple:
     last_stage = "PROXY_LIST_EXHAUSTED"
     for attempt, candidate in enumerate(candidates, 1):
         if not candidate.get("server"):
@@ -2110,6 +2122,10 @@ def checkin_assigned_account(account: dict, candidates: list[dict], profile: dic
             )
         except Exception:
             result, stage = None, "UNEXPECTED"
+        if observations is not None:
+            from account_observations import query_exit_ip
+
+            observations["exit_ip"] = query_exit_ip(candidate)
         quota, last_stage = _safe_login_result(result, stage)
         if last_stage == "SUCCESS":
             return {"quota": quota}, last_stage
@@ -2182,6 +2198,10 @@ def run_isolated_group(routes: list[dict], manifest_group: dict, result_path: Pa
         tags = []
         for index, candidate in enumerate(account["proxies"], 1):
             tag = f"{account['id']}_p{index:02}"
+            if "outbound" in candidate:
+                outbounds[tag] = dict(candidate["outbound"], tag=f"out-{tag}")
+                tags.append(tag)
+                continue
             link = candidate.get("link") or nodes.get(candidate.get("node"))
             if link is None:
                 log(f"{account['id']} candidate{index}: NODE_MISSING")
@@ -2207,9 +2227,11 @@ def run_isolated_group(routes: list[dict], manifest_group: dict, result_path: Pa
                     account = by_id[row["id"]]
                     candidates = [{"server": endpoints[tag]} for tag in candidate_tags[row["id"]]
                                   if tag in endpoints]
-                    result, stage = checkin_assigned_account(account, candidates, account["profile"])
+                    observations = {}
+                    result, stage = checkin_assigned_account(account, candidates, account["profile"],
+                                                            observations=observations)
                     quota, stage = _safe_login_result(result, stage)
-                    row.update(quota=quota, stage=stage)
+                    row.update(quota=quota, stage=stage, exit_ip=observations.get("exit_ip"))
                     write_report(result_path, manifest_group, rows)
                     log(f"{row['id']}: {stage}")
     except Exception:
@@ -2223,6 +2245,25 @@ def run_isolated_group(routes: list[dict], manifest_group: dict, result_path: Pa
 # ============================================================
 # Main
 # ============================================================
+
+def _random_accounts(config: dict, plan: dict | None = None) -> list[dict]:
+    from subscription_pool import load_pool, make_plan, resolve_random_accounts, validate_plan
+
+    if plan is not None:
+        validate_plan(plan)
+    require_names = any("node" in p for a in config["accounts"] for p in a["proxies"])
+    names, nodes = load_pool(config["subscription_url"], require_names=require_names)
+    if plan is None:
+        plan = make_plan(config, names, nodes)
+    return resolve_random_accounts(config, plan, names, nodes)
+
+
+def _write_group_failure(group: dict, path: Path, stage: str) -> None:
+    from report import write_report
+
+    write_report(path, group, [{"id": account_id, "quota": None, "stage": stage}
+                               for account_id in group["account_ids"]])
+
 
 def main():
     from routing import RUNNERS, build_manifest, parse_config
@@ -2249,6 +2290,8 @@ def main():
                 run_checkin()
             return
         config = parse_config(raw)
+        from subscription_pool import has_random
+
         notification_config = config["notifications"]
         manifest = build_manifest(config["accounts"])
         by_id = {account["id"]: account for account in config["accounts"]}
@@ -2258,21 +2301,43 @@ def main():
             if (group["account_ids"] != json.loads(os.environ["ACCOUNT_IDS"])
                     or group["os"] != os.environ["RUNNER_KEY"] or group["os"] != RUNNERS.get(host_os)):
                 raise ValueError("ROUTE_CONFIG_FAIL")
+            if has_random(config["accounts"]) or os.environ.get("RANDOM_PLAN"):
+                try:
+                    if not has_random(config["accounts"]) or not os.environ.get("RANDOM_PLAN"):
+                        raise ValueError("RANDOM_POOL_FAIL")
+                    plan = json.loads(os.environ["RANDOM_PLAN"])
+                    by_id = {a["id"]: a for a in _random_accounts(config, plan)}
+                except Exception:
+                    _write_group_failure(group, Path(os.environ["RESULT_PATH"]), "RANDOM_POOL_FAIL")
+                    log("RANDOM_POOL_FAIL")
+                    sys.exit(1)
             code = run_isolated_group([by_id[i] for i in group["account_ids"]], group,
                                       Path(os.environ["RESULT_PATH"]), config["subscription_url"])
             sys.exit(code)
         if any(account["os"] != host_os for account in config["accounts"]):
             raise ValueError("ROUTE_CONFIG_FAIL")
-        from report import combine_reports
+        from report import combine_reports, observe_balances
 
         with tempfile.TemporaryDirectory(prefix="checkin-results-") as directory:
             root = Path(directory)
+            random_failed = False
+            if has_random(config["accounts"]):
+                try:
+                    by_id = {a["id"]: a for a in _random_accounts(config)}
+                except Exception:
+                    random_failed = True
+                    log("RANDOM_POOL_FAIL")
             for group in manifest["groups"]:
                 result_dir = root / f"checkin-results-{group['group_id']}"
                 result_dir.mkdir()
-                run_isolated_group([by_id[i] for i in group["account_ids"]], group,
-                                   result_dir / "result.json", config["subscription_url"])
-            results = combine_reports(manifest, root)
+                if random_failed:
+                    _write_group_failure(group, result_dir / "result.json", "RANDOM_POOL_FAIL")
+                else:
+                    run_isolated_group([by_id[i] for i in group["account_ids"]], group,
+                                       result_dir / "result.json", config["subscription_url"])
+            results = combine_reports(manifest, root, details=True)
+            history_path = Path(os.environ.get("BALANCE_HISTORY_PATH", ".superpowers/checkin-history/balances.json"))
+            results = observe_balances(results, config, history_path)
             count = sum(stage == "SUCCESS" for _, _, stage in results)
             send_notifications(*format_notifications(results, count, len(results)), config=notification_config)
             sys.exit(int(count != len(results)))

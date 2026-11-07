@@ -69,6 +69,7 @@ class IsolatedCheckinTests(unittest.TestCase):
             with patch.object(proxy_runtime, "download_binary", return_value=Path("dummy")), \
                     patch.object(proxy_runtime, "group_proxy") as runtime, \
                     patch.object(proxy_runtime, "load_node_links") as subscription, \
+                    patch("account_observations.query_exit_ip", return_value=None), \
                     patch.object(app, "browser_login_complete", side_effect=[
                         (None, "WAF_TIMEOUT"), ({"quota": 500000}, "SUCCESS"),
                         ({"quota": 1000000}, "SUCCESS")]) as login, \
@@ -76,8 +77,8 @@ class IsolatedCheckinTests(unittest.TestCase):
                 runtime.return_value.__enter__.return_value = endpoints
                 self.assertEqual(app.run_isolated_group(routes, group, path), 0)
             self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["results"], [
-                {"id": "a01", "quota": 500000, "stage": "SUCCESS"},
-                {"id": "a02", "quota": 1000000, "stage": "SUCCESS"},
+                {"id": "a01", "quota": 500000, "stage": "SUCCESS", "exit_ip": None},
+                {"id": "a02", "quota": 1000000, "stage": "SUCCESS", "exit_ip": None},
             ])
         self.assertEqual([(call.args[0]["id"], call.kwargs["proxy"]["server"])
                           for call in login.call_args_list], [
