@@ -15,6 +15,16 @@
 - ✅ 所有分组结束后统一汇总到 Telegram / 企业微信群机器人（均可选）
 - ✅ GitHub Actions 自动运行（每天北京时间 06:45；实际启动可能受平台调度延迟影响）
 
+## Cloudflare 随机触发（可选）
+
+`cloudflare/` 是独立的 Worker 触发器，可在 Cloudflare 连接本 GitHub 仓库部署。一个 Worker 支持多个 GitHub 仓库，每个目标、每个北京时间日期分别在 01:00～23:00 独立抽取时间；GitHub 仍负责多系统登录及最终通知，Actions 不提前启动等待。
+
+部署步骤和完整变量说明见 **[Cloudflare 部署手册](cloudflare/README.md)**。连接现有仓库时选择 `dev-plus` 分支、根目录 `cloudflare`、构建命令 `npm test`、部署命令 `npm run deploy`。Worker 和 SQLite Durable Object、Cron 随代码配置部署；`TRIGGER_CONFIG` 及 GitHub Token 在 Cloudflare 的运行时 Variables & Secrets 中设置，未配置时不会触发签到。
+
+[部署 Cloudflare 触发器模板](https://deploy.workers.cloudflare.com/?url=https://github.com/yidu456/AgentRouter-Check-in/tree/dev-plus/cloudflare)（公共仓库适用；仅复制触发器子目录到新仓库，不复制 Python 签到项目）。连接 GitHub 用于代码部署，不等于授权启动 GitHub Actions，仍需配置目标仓库限定的 Token。
+
+正式启用前须分别关闭各目标仓库默认分支旧的 `on.schedule`，保留 `workflow_dispatch`；本功能不自动修改默认分支，也不保证平台准点启动。
+
 ## 推荐配置：一个变量配置所有账号
 
 完整字段表、可填写的值、默认值、各协议节点示例和排错说明见 **[CHECKIN_CONFIG 详细配置手册](docs/configuration.md)**。不要将 Xray 内核 JSON 或 Clash YAML 直接放进这个变量。

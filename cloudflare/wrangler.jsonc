@@ -1,0 +1,28 @@
+{
+    "$schema": "./node_modules/wrangler/config-schema.json",
+    "name": "agentrouter-trigger",
+    "main": "src/worker.mjs",
+    "compatibility_date": "2026-11-07",
+    "workers_dev": false,
+    "keep_vars": true,
+    "triggers": {
+        "crons": ["5 16 * * *"]
+    },
+    "durable_objects": {
+        "bindings": [
+            {
+                "name": "SCHEDULES",
+                "class_name": "TriggerSchedule"
+            }
+        ]
+    },
+    "migrations": [
+        {
+            "tag": "v1",
+            "new_sqlite_classes": ["TriggerSchedule"]
+        }
+    ],
+    "observability": {
+        "enabled": true
+    }
+}

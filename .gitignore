@@ -10,3 +10,11 @@ xray
 xray.exe
 xray-config.json
 xray.log
+node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.dev.vars.example
+!.env.example
