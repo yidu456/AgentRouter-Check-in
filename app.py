@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 import requests
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright, Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError
 
 
 # ============================================================
@@ -1469,6 +1469,19 @@ def browser_login_complete(
 
                     continue
 
+                except PlaywrightError as exc:
+                    # Only fixed Chromium codes may leave the credential-bearing exception.
+                    network_code = next((code for code in (
+                        "ERR_PROXY_CONNECTION_FAILED", "ERR_TUNNEL_CONNECTION_FAILED",
+                        "ERR_SOCKS_CONNECTION_FAILED", "ERR_NAME_NOT_RESOLVED",
+                        "ERR_CONNECTION_REFUSED", "ERR_CONNECTION_CLOSED", "ERR_CONNECTION_RESET",
+                        "ERR_SSL_PROTOCOL_ERROR", "ERR_CERT_AUTHORITY_INVALID",
+                    ) if f"net::{code}" in str(exc)), None)
+                    if network_code:
+                        log(f"NAVIGATION_FAIL: {network_code}")
+                        raise _LoginStageError("NODE_UNREACHABLE") from None
+                    raise
+
             if not goto_done:
 
                 raise _LoginStageError(
@@ -2113,20 +2126,21 @@ def _safe_login_result(result: dict | None, stage: str) -> tuple:
 
 
 def checkin_assigned_account(account: dict, candidates: list[dict], profile: dict) -> tuple:
-    for candidate in candidates:
+    last_stage = "PROXY_LIST_EXHAUSTED"
+    for attempt, candidate in enumerate(candidates, 1):
         if not candidate.get("server"):
             continue
         try:
             result, stage = browser_login_complete(
                 account, proxy=candidate, profile=profile, isolated=True
             )
-            if result:
-                quota, safe_stage = _safe_login_result(result, stage)
-                if safe_stage == "SUCCESS":
-                    return {"quota": quota}, safe_stage
         except Exception:
-            pass
-    return None, "PROXY_LIST_EXHAUSTED"
+            result, stage = None, "UNEXPECTED"
+        quota, last_stage = _safe_login_result(result, stage)
+        if last_stage == "SUCCESS":
+            return {"quota": quota}, last_stage
+        log(f"{account.get('id', 'account')} attempt{attempt}: {last_stage}")
+    return None, last_stage
 
 
 def run_checkin(notify: bool = True, manifest_group: dict | None = None,

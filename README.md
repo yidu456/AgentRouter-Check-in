@@ -74,6 +74,7 @@
 - `proxies` 必须配置 1～N 个候选。每个候选只写 `node` 或 `link`，不能同时写。`node` 使用共用订阅中的节点名称；`link` 为完整节点分享链接，无须订阅。只使用直接链接时可省略 `subscription_url`。
 - 订阅名称来自分享链接的 `#名称`（URL 解码后），VMess 可使用 `ps`；订阅中重名节点会被拒绝。节点引用、相同直接链接不能重复分配给多个账号。
 - 每次从列表第一个候选开始，失败后关闭浏览器并尝试该账号下一个候选。首次成功即停止，不会为了遍历代理再次登录。全部失败只影响该账号，不使用未配置节点、免费代理或直连。
+- 每次失败会输出 `账号ID attemptN: 安全阶段码`；已尝试的候选全部失败时，报告保留最后一次失败阶段，而不是一律覆盖成 `PROXY_LIST_EXHAUSTED`。没有可尝试候选时仍使用该汇总码。导航失败只输出白名单内的 Chromium 网络错误码，不输出原始异常、URL 或节点信息。
 - 当前支持明文/base64/base64url 的节点链接订阅及 vless、vmess、trojan、hysteria2/hy2、socks5/socks。不是任意 Clash YAML / sing-box JSON 订阅都能解析；不支持的节点会报告失败，不会静默降级 TLS。
 - Hysteria2 的 Salamander 混淆密码至少需要 4 个 UTF-8 字节；不兼容配置会提前拒绝，避免影响同组其他候选。
 - VLESS WebSocket 支持 `ed` Early Data，转换为 Xray 的路径 `ed` 参数；`eh` 仅支持 Xray 固定的 `Sec-WebSocket-Protocol`。路径中的 `ed` 与外层参数冲突、启用 Early Data 却指定空/自定义头、Reality + WebSocket 等不能正确转换的组合会明确失败，不会静默忽略。保留其余路径查询、Host、SNI 和明确配置的证书校验策略。VLESS 用户 ID 必须是有效完整 UUID，不能使用截断后的脱敏值；请从客户端复制完整节点链接。

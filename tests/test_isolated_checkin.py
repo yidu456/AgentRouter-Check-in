@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import app
 import proxy_runtime
+from playwright.sync_api import Error as PlaywrightError
 
 
 class IsolatedCheckinTests(unittest.TestCase):
@@ -138,9 +139,61 @@ class IsolatedCheckinTests(unittest.TestCase):
                 patch.object(app, "pop_proxy") as pool, \
                 patch.object(app, "browser_login_complete", return_value=(None, "WAF_TIMEOUT")) as login:
             self.assertEqual(app.checkin_assigned_account({}, [{"server": "http://local"}], {}),
-                             (None, "PROXY_LIST_EXHAUSTED"))
+                             (None, "WAF_TIMEOUT"))
         pool.assert_not_called()
         self.assertEqual(login.call_count, 1)
+
+    def test_failed_candidates_log_safe_stages_and_preserve_last_failure(self):
+        with patch.object(app, "browser_login_complete", side_effect=[
+            (None, "BROWSER_LAUNCH_FAIL"), (None, "USER_API_FAIL")
+        ]), patch.object(app, "log") as log:
+            self.assertEqual(app.checkin_assigned_account({"id": "a01"},
+                [{"server": "http://one"}, {"server": "http://two"}], {}), (None, "USER_API_FAIL"))
+        self.assertEqual([entry.args[0] for entry in log.call_args_list], [
+            "a01 attempt1: BROWSER_LAUNCH_FAIL", "a01 attempt2: USER_API_FAIL"])
+
+    def test_unknown_stages_and_exceptions_never_leak_private_details(self):
+        for outcome in ((None, "private-stage"), ({"quota": True}, "SUCCESS"), RuntimeError("private-error")):
+            with self.subTest(outcome=outcome), patch.object(app, "browser_login_complete") as login, patch.object(app, "log") as log:
+                if isinstance(outcome, Exception):
+                    login.side_effect = outcome
+                else:
+                    login.return_value = outcome
+                result, stage = app.checkin_assigned_account({"id": "a01"}, [{"server": "http://local"}], {})
+                self.assertIsNone(result)
+                self.assertIn(stage, {"UNEXPECTED", "QUOTA_INVALID"})
+                self.assertEqual(log.call_args.args[0], f"a01 attempt1: {stage}")
+                self.assertNotIn("private", log.call_args.args[0])
+
+    def test_empty_candidates_report_exhaustion_without_starting_browser(self):
+        with patch.object(app, "browser_login_complete") as login:
+            self.assertEqual(app.checkin_assigned_account({}, [{}, {"server": ""}], {}),
+                             (None, "PROXY_LIST_EXHAUSTED"))
+        login.assert_not_called()
+
+    def test_navigation_network_error_logs_only_allowlisted_code(self):
+        for code in ("ERR_PROXY_CONNECTION_FAILED", "ERR_TUNNEL_CONNECTION_FAILED",
+                     "ERR_SOCKS_CONNECTION_FAILED", "ERR_NAME_NOT_RESOLVED", "ERR_CONNECTION_REFUSED",
+                     "ERR_CONNECTION_CLOSED", "ERR_CONNECTION_RESET", "ERR_SSL_PROTOCOL_ERROR",
+                     "ERR_CERT_AUTHORITY_INVALID"):
+            with self.subTest(code=code), patch.object(app, "sync_playwright") as factory, patch.object(app, "log") as log:
+                browser = factory.return_value.__enter__.return_value.chromium.launch.return_value
+                page = browser.new_context.return_value.new_page.return_value
+                page.goto.side_effect = PlaywrightError(f"net::{code} at https://private.example/login?key=private-token")
+                self.assertEqual(app.browser_login_complete({"site": "https://example.test"},
+                    proxy={"server": "http://local"}, isolated=True), (None, "NODE_UNREACHABLE"))
+                log.assert_called_once_with(f"NAVIGATION_FAIL: {code}")
+                browser.close.assert_called_once()
+
+    def test_unrecognized_navigation_error_stays_private(self):
+        with patch.object(app, "sync_playwright") as factory, patch.object(app, "log") as log:
+            browser = factory.return_value.__enter__.return_value.chromium.launch.return_value
+            page = browser.new_context.return_value.new_page.return_value
+            page.goto.side_effect = PlaywrightError("private-error at https://private.example/?key=private-token")
+            self.assertEqual(app.browser_login_complete({"site": "https://example.test"},
+                proxy={"server": "http://local"}, isolated=True), (None, "UNEXPECTED"))
+            log.assert_not_called()
+            browser.close.assert_called_once()
 
     def test_browser_refuses_missing_isolated_endpoint(self):
         with patch.object(app, "PROXY_SERVER", "http://global.example"), \
