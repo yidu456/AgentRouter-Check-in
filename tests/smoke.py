@@ -1,5 +1,6 @@
 """Native browser/proxy smoke using only loopback fixtures and dummy credentials."""
 
+import base64
 import json
 import platform
 import select
@@ -14,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app
-from proxy_runtime import download_binary, group_proxy
+from proxy_runtime import check_outbound, download_binary, group_proxy, parse_node_link
 from routing import DEFAULT_PROFILE
 
 
@@ -138,6 +139,30 @@ def check_browser_profile(endpoint):
             browser.close()
 
 
+def check_node_schemas(binary, directory):
+    user_id = "12345678-1234-4234-8234-123456789abc"
+    public_key = base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")
+    vmess = base64.b64encode(json.dumps({
+        "v": "2", "add": "node.example", "port": "443", "id": user_id,
+        "aid": "0", "net": "ws", "tls": "tls", "sni": "tls.example",
+        "host": "ws.example", "path": "/socket?marker=dummy", "allowInsecure": "1",
+    }).encode()).decode()
+    links = [
+        f"vless://{user_id}@node.example:443?encryption=none&security=tls&type=ws&host=ws.example&sni=tls.example&allowInsecure=1&ed=2048&eh=Sec-WebSocket-Protocol&path=%2F%3Fed%3D2048%26marker%3Done%26marker%3Dtwo",
+        f"vless://{user_id}@node.example:443?security=tls&type=ws&path=%2Fsocket%3Fmarker%3Done%26marker%3Dtwo",
+        f"vless://{user_id}@node.example:443?encryption=none&security=tls&type=grpc&serviceName=dummy",
+        f"vless://{user_id}@node.example:443?encryption=none&security=reality&type=tcp&flow=xtls-rprx-vision&pbk={public_key}&sid=0123456789abcdef&sni=tls.example&fp=chrome",
+        "vmess://" + vmess,
+        "trojan://dummy-password@node.example:443?type=ws&host=ws.example&path=%2Fsocket&sni=tls.example",
+        "hy2://dummy-auth@node.example:443?sni=tls.example&obfs=salamander&obfs-password=dummy-obfs",
+        "socks5://dummy-user:dummy-password@node.example:1080",
+    ]
+    # Native -test builds the schema only: it starts no listeners or node connections.
+    for index, link in enumerate(links):
+        outbound = parse_node_link(link, f"schema{index}")
+        assert check_outbound(outbound, binary, directory), f"XRAY_SCHEMA_FAIL_{index}"
+
+
 def main():
     fixture = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
     fixture.requests_seen = 0
@@ -149,6 +174,7 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix="checkin-smoke-") as directory:
             binary = download_binary(platform.system(), platform.machine(), Path(directory))
+            check_node_schemas(binary, Path(directory))
             outbounds = {"a01_p01": {
                 "type": "socks", "server": "127.0.0.1",
                 "server_port": socks.server_address[1], "version": "5",
@@ -170,7 +196,9 @@ def main():
                 with app.requests.Session() as session:
                     session.trust_env = False
                     try:
-                        session.get(account["site"], proxies={"http": endpoint, "https": endpoint}, timeout=3)
+                        response = session.get(account["site"], proxies={"http": endpoint, "https": endpoint}, timeout=3)
+                        # Xray may return HTTP 503 instead of closing a failed proxy request.
+                        response.raise_for_status()
                     except app.requests.RequestException:
                         pass
                     else:

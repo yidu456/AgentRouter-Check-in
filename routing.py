@@ -17,7 +17,7 @@ MAX_CANDIDATES = 65535 - 18080 + 1
 RUNNERS = {
     "ubuntu": "ubuntu-24.04",
     "windows": "windows-2022",
-    "macos": "macos-14",
+    "macos": "macos-15",
 }
 DIRECT_SCHEMES = {"vless", "vmess", "trojan", "hysteria2", "hy2", "socks5", "socks"}
 ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,31}$")

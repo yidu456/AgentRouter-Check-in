@@ -13,7 +13,7 @@ import app
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_MANIFEST = {"version": 1, "groups": [
     {"group_id": "g01", "os": "windows-2022", "account_ids": ["account_alpha", "account_beta"], "mode": "isolated"},
-    {"group_id": "g02", "os": "macos-14", "account_ids": ["account_gamma"], "mode": "isolated"},
+    {"group_id": "g02", "os": "macos-15", "account_ids": ["account_gamma"], "mode": "isolated"},
 ]}
 
 
@@ -40,7 +40,7 @@ class PlanningCliTests(unittest.TestCase):
         result, output, assignment = self.run_cli("matrix")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(output.removeprefix("matrix=").strip()), {"include": [
-            {"os": "windows-2022", "slot": 1}, {"os": "macos-14", "slot": 2},
+            {"os": "windows-2022", "slot": 1}, {"os": "macos-15", "slot": 2},
         ]})
         self.assertEqual(assignment, "")
         for marker in ("account_alpha", "account_beta", "account_gamma", "credential-marker", "invalid-secret-marker"):
@@ -58,7 +58,7 @@ class PlanningCliTests(unittest.TestCase):
 
     def test_assign_handles_mac_and_legacy_without_losing_account_count(self):
         cases = [
-            (PUBLIC_MANIFEST, "2", "macos-14", "g02", "isolated", ["account_gamma"]),
+            (PUBLIC_MANIFEST, "2", "macos-15", "g02", "isolated", ["account_gamma"]),
             ({"version": 1, "groups": [{"group_id": "g01", "os": "ubuntu-24.04", "mode": "legacy",
                                         "account_ids": ["legacy001", "legacy002", "legacy003", "legacy004"]}]},
              "1", "ubuntu-24.04", "g01", "legacy", ["legacy001", "legacy002", "legacy003", "legacy004"]),
@@ -87,9 +87,21 @@ class PlanningCliTests(unittest.TestCase):
                     self.assertEqual((output, assignment), ("", ""))
                     self.assertNotIn("credential-marker", result.stdout + result.stderr)
 
+    def test_retired_macos_label_cannot_plan_or_assign_accounts(self):
+        retired_manifest = {"version": 1, "groups": [
+            dict(PUBLIC_MANIFEST["groups"][1], os="macos-14"),
+        ]}
+        for command in ("matrix", "assign"):
+            with self.subTest(command=command):
+                extra = ("--slot", "1", "--runner", "macos-14") if command == "assign" else ()
+                result, output, assignment = self.run_cli(command, retired_manifest, extra)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stderr.strip(), "ROUTE_CONFIG_FAIL")
+                self.assertEqual((output, assignment), ("", ""))
+
     def test_invalid_slot_runner_or_missing_env_fails_without_assigning_accounts(self):
         for slot, runner, has_env in (("0", "windows-2022", True), ("-1", "windows-2022", True),
-                                      ("3", "windows-2022", True), ("1", "macos-14", True),
+                                      ("3", "windows-2022", True), ("1", "macos-15", True),
                                       ("1", "windows-2022", False)):
             with self.subTest(slot=slot, runner=runner, env=has_env):
                 result, output, assignment = self.run_cli("assign", extra=("--slot", slot, "--runner", runner),
@@ -98,7 +110,7 @@ class PlanningCliTests(unittest.TestCase):
                 self.assertEqual((output, assignment), ("", ""))
 
     def test_job_local_assignment_reaches_only_its_accounts_in_the_real_controller(self):
-        result, _, assignment = self.run_cli("assign", extra=("--slot", "2", "--runner", "macos-14"))
+        result, _, assignment = self.run_cli("assign", extra=("--slot", "2", "--runner", "macos-15"))
         self.assertEqual(result.returncode, 0, result.stderr)
         env = dict(line.split("=", 1) for line in assignment.splitlines())
         accounts = []
@@ -115,7 +127,7 @@ class PlanningCliTests(unittest.TestCase):
                 app.main()
             self.assertEqual(exited.exception.code, 0)
         self.assertEqual([account["id"] for account in run.call_args.args[0]], ["account_gamma"])
-        self.assertEqual(run.call_args.args[1], {"group_id": "g02", "os": "macos-14",
+        self.assertEqual(run.call_args.args[1], {"group_id": "g02", "os": "macos-15",
                                                "account_ids": ["account_gamma"], "mode": "isolated"})
         notify.assert_not_called()
 

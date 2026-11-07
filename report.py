@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,31}$")
-RUNNER_NAMES = {"ubuntu-24.04", "windows-2022", "macos-14"}
+RUNNER_NAMES = {"ubuntu-24.04", "windows-2022", "macos-15"}
 GROUP_KEYS = {"group_id", "os", "account_ids", "mode"}
 RESULT_KEYS = {"id", "quota", "stage"}
 REPORT_KEYS = {"version", "group_id", "os", "results"}

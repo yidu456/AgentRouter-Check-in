@@ -9,7 +9,7 @@
 - ✅ 新模式：一个 `CHECKIN_CONFIG` 变量配置所有账号、系统、代理列表和通知
 - ✅ 固定系统分组：Ubuntu / Windows / macOS，每组最多 3 个账号
 - ✅ 每账号 1～N 个代理，按顺序尝试，首次成功后停止；新模式不回退免费代理或直连
-- ✅ 旧模式双通道代理：优先自有节点（sing-box），失败自动回退免费代理池
+- ✅ 统一使用 Xray 内核；旧模式优先自有节点，失败自动回退免费代理池
 - ✅ 代理池 WAF 探测：随机抽样并发检测 IP 是否触发阿里云 WAF（按站点独立探测）
 - ✅ 所有分组结束后统一汇总到 Telegram / 企业微信群机器人（均可选）
 - ✅ GitHub Actions 自动运行（每天北京时间 06:45；实际启动可能受平台调度延迟影响）
@@ -69,12 +69,14 @@
 ### 账号和代理规则
 
 - 每个账号的 `id` 必须唯一，以字母开头、最多 32 个字母/数字/下划线/短横线；请勿把邮箱或密钥作为 ID，它会显示在任务和通知中。
-- `os` 只能为 `ubuntu`、`windows`、`macos`。同系统账号按 ID 排序，每组最多 3 个；不同分组使用独立 Runner。同一账号不会每天随机更换系统。
+- `os` 只能为 `ubuntu`、`windows`、`macos`，对应固定标签 `ubuntu-24.04`、`windows-2022`、`macos-15`（ARM64）。`macos-14` 已退役，不再使用。同系统账号按 ID 排序，每组最多 3 个；不同分组使用独立 Runner。同一账号不会每天随机更换系统。
 - `site` 可省略，默认 `https://agentrouter.org`。JSON 密码完整保留，包括冒号、竖线和两端空格。
 - `proxies` 必须配置 1～N 个候选。每个候选只写 `node` 或 `link`，不能同时写。`node` 使用共用订阅中的节点名称；`link` 为完整节点分享链接，无须订阅。只使用直接链接时可省略 `subscription_url`。
 - 订阅名称来自分享链接的 `#名称`（URL 解码后），VMess 可使用 `ps`；订阅中重名节点会被拒绝。节点引用、相同直接链接不能重复分配给多个账号。
 - 每次从列表第一个候选开始，失败后关闭浏览器并尝试该账号下一个候选。首次成功即停止，不会为了遍历代理再次登录。全部失败只影响该账号，不使用未配置节点、免费代理或直连。
 - 当前支持明文/base64/base64url 的节点链接订阅及 vless、vmess、trojan、hysteria2/hy2、socks5/socks。不是任意 Clash YAML / sing-box JSON 订阅都能解析；不支持的节点会报告失败，不会静默降级 TLS。
+- Hysteria2 的 Salamander 混淆密码至少需要 4 个 UTF-8 字节；不兼容配置会提前拒绝，避免影响同组其他候选。
+- VLESS WebSocket 支持 `ed` Early Data，转换为 Xray 的路径 `ed` 参数；`eh` 仅支持 Xray 固定的 `Sec-WebSocket-Protocol`。路径中的 `ed` 与外层参数冲突、启用 Early Data 却指定空/自定义头、Reality + WebSocket 等不能正确转换的组合会明确失败，不会静默忽略。保留其余路径查询、Host、SNI 和明确配置的证书校验策略。VLESS 用户 ID 必须是有效完整 UUID，不能使用截断后的脱敏值；请从客户端复制完整节点链接。
 - `profile` 可省略：默认 1440×900、像素比例 1、`zh-CN`、`Asia/Shanghai`、浅色。可固定视口/屏幕、像素比例 1/2、语言 `zh-CN`/`en-US`、时区 `Asia/Shanghai`/`Asia/Tokyo`/`America/New_York`/`Europe/London` 和 `light`/`dark`。
 - 使用真实系统 Chromium 的默认 UA，不在 Linux 上伪装 macOS。不同节点不保证不同出口 IP；基本配置固定也不代表完整硬件指纹固定或账号不可关联。
 
@@ -96,7 +98,9 @@
 
 新模式有配置错误就失败，不与下面的旧变量混用。删除/清空 GitHub Secret `CHECKIN_CONFIG` 会重新使用旧模式，包括旧模式的免费代理/直连兜底。单个 Secret 最大 48 KiB；所有接收它的任务都能读取其中全部凭据，这不是互不信任任务之间的凭据隔离。不要提交配置到仓库，也不要在外部 PR 上运行带 Secrets 的任务。
 
-依赖基线：Python 3.11、Playwright 1.64.1、sing-box 1.14.4（按系统下载并核对 SHA-256）。Windows/macOS Runner 的额度、计费和可用并发取决于仓库及 GitHub 套餐；版本化 Runner 标签不保证每次分配同一台电脑。
+依赖基线：Python 3.11、Playwright 1.64.1、Xray 26.1.23（按系统下载官方 ZIP 并核对固定 SHA-256），新旧模式使用同一内核。Windows/macOS Runner 的额度、计费和可用并发取决于仓库及 GitHub 套餐；版本化 Runner 标签不保证每次分配同一台电脑。
+
+**内核版本与 TLS 风险：** 为兼容链接中明确配置的 `allowInsecure=1`，固定到仍支持该字段的 Xray 26.1.23；它不是最新版，后续版本已移除此字段。默认仍验证证书，不会自动开启不安全模式；显式关闭校验会失去服务端身份验证。较旧内核缺少后续修复，不应视为安全更新基线。子进程强制设置 `GODEBUG=multipathtcp=0` 以禁用旧内核涉及的 MPTCP 路径；不提供受已知 Hy2/gRPC 证书固定问题影响的 CA 固定配置。建议使用有效证书、删除不安全参数后再升级内核，而不是长期依赖该兼容版本。
 
 先在 Actions 手动运行 **Credential-free platform smoke**，它只使用本地模拟网页、临时代理和虚构凭据验证三个系统，不会读取 Secrets。然后再运行 **Ayrouter Daily Check-in** 做实际签到。定时任务只使用仓库默认分支的工作流；开发分支上的改动需要按正常流程集成后才影响日常计划任务。
 
@@ -105,13 +109,13 @@
 ```sh
 python -m pip install requests playwright==1.64.1 pynacl pysocks
 python -m unittest discover -s tests -v
-python -m py_compile app.py routing.py proxy_runtime.py report.py
+python -m py_compile app.py routing.py proxy_runtime.py legacy_proxy.py report.py
 bash -n setup-proxy.sh
 python -m playwright install chromium
 python tests/smoke.py
 ```
 
-本地运行 `app.py` 会执行真实登录；新模式的本地账号必须全部匹配本机系统，多系统配置应通过 Actions 执行。`setup-proxy.sh` 仍仅供旧 Linux/Actions 路径，不是 Windows 启动器。
+本地运行 `app.py` 会执行真实登录；新模式的本地账号必须全部匹配本机系统，多系统配置应通过 Actions 执行。`setup-proxy.sh` 通过 `legacy_proxy.py` 复用同一 Xray 下载、解析与启动逻辑，仍仅供旧 Linux/Actions 路径，不是 Windows 启动器。只保留选中节点的子进程；失败时仅停止自己启动的进程，不清理其他进程或占用端口。
 
 ## 旧变量兼容模式
 
@@ -161,7 +165,7 @@ python tests/smoke.py
 | `PROXY_CONFIG_URL` | 订阅地址 URL | `NODE_LINK` 为空时的备用订阅地址 |
 
 > **代理工作逻辑**：
-> 1. **通道一（优先）**：配置了 `NODE_LINK` / `PROXY_CONFIG_URL` 时，脚本通过 [sing-box](https://github.com/SagerNet/sing-box) 启动自有节点，直接登录
+> 1. **通道一（优先）**：配置了 `NODE_LINK` / `PROXY_CONFIG_URL` 时，脚本通过 [Xray](https://github.com/XTLS/Xray-core) 启动自有节点，直接登录
 > 2. **通道二（兜底）**：自有节点未配置或登录失败时，自动从 [freeproxy](https://github.com/CharlesPikachu/freeproxy) 代理池随机抽取 100 个 IP，50 线程并发访问登录页检测是否触发阿里云 WAF；凑够 3 个干净 IP 或扫满 5 轮（500 个）为止
 > 3. 日志中会对使用的代理 IP 打码（如 `124.248.***.***:1080`）
 ---

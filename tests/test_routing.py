@@ -323,7 +323,7 @@ class ManifestTests(unittest.TestCase):
                 "groups": [
                     {"group_id": "g01", "os": "ubuntu-24.04", "account_ids": ["u1", "u2", "u3"], "mode": "isolated"},
                     {"group_id": "g02", "os": "windows-2022", "account_ids": ["w1", "w2", "w3"], "mode": "isolated"},
-                    {"group_id": "g03", "os": "macos-14", "account_ids": ["m1", "m2"], "mode": "isolated"},
+                    {"group_id": "g03", "os": "macos-15", "account_ids": ["m1", "m2"], "mode": "isolated"},
                 ],
             },
         )

@@ -59,6 +59,19 @@ class WriteReportTests(unittest.TestCase):
             )
             self.assertFalse(path.with_name("result.json.tmp").exists())
 
+    def test_macos_15_report_preserves_native_runner_label(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "result.json"
+            report.write_report(path, group(os_name="macos-15"), [result()])
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["os"], "macos-15")
+
+    def test_retired_macos_label_cannot_write_a_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "result.json"
+            with self.assertRaisesRegex(ValueError, r"^REPORT_INVALID$"):
+                report.write_report(path, group(os_name="macos-14"), [result()])
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
     def test_rejects_invalid_quota_and_stage_combinations(self):
         invalid_rows = [
             [result(quota=-1)],
@@ -210,7 +223,7 @@ class CombineReportTests(unittest.TestCase):
             "not-json credential-marker",
             dict(valid_base, version=True),
             dict(valid_base, group_id="g02"),
-            dict(valid_base, os="macos-14"),
+            dict(valid_base, os="macos-15"),
             dict(valid_base, secret="credential-marker"),
             dict(valid_base, results=[result("a01"), result("a01")]),
             dict(valid_base, results=[result("a01"), result("outside")]),
@@ -286,11 +299,11 @@ class ManifestValidationTests(unittest.TestCase):
             manifest(
                 [
                     group("g01", account_ids=["legacy001"], mode="legacy"),
-                    group("g02", "macos-14", ["a01"], mode="isolated"),
+                    group("g02", "macos-15", ["a01"], mode="isolated"),
                 ]
             ),
             manifest([group("g01"), group("g01", "windows-2022", ["b01"])]),
-            manifest([group("g01", account_ids=["a01"]), group("g02", "macos-14", ["a01"])]),
+            manifest([group("g01", account_ids=["a01"]), group("g02", "macos-15", ["a01"])]),
         ]
         for value in cases:
             with self.subTest(value=value):
@@ -356,7 +369,7 @@ class NotifyCliTests(unittest.TestCase):
                 for value in values:
                     write_raw_report(root, value, value["group_id"])
             expected = public_manifest if isinstance(public_manifest, dict) else manifest()
-            os_keys = {"ubuntu-24.04": "ubuntu", "windows-2022": "windows", "macos-14": "macos"}
+            os_keys = {"ubuntu-24.04": "ubuntu", "windows-2022": "windows", "macos-15": "macos"}
             config = {"version": 1, "notifications": {"telegram": {"bot_token": "token", "chat_id": "chat"}},
                       "accounts": [{"id": account_id, "username": account_id + "@example.test",
                                     "password": "credential-marker", "os": os_keys[g["os"]],
@@ -448,7 +461,7 @@ class NotifyCliTests(unittest.TestCase):
         public_manifest = manifest(
             [
                 group("g01", "ubuntu-24.04", ["a01", "a02"]),
-                group("g02", "macos-14", ["b01"]),
+                group("g02", "macos-15", ["b01"]),
             ]
         )
         report_values = [
@@ -461,7 +474,7 @@ class NotifyCliTests(unittest.TestCase):
             {
                 "version": 1,
                 "group_id": "g02",
-                "os": "macos-14",
+                "os": "macos-15",
                 "results": [result("b01", 0)],
             },
         ]
@@ -482,7 +495,7 @@ class NotifyCliTests(unittest.TestCase):
                 [
                     ("ubuntu-24.04 a01", None, "REPORT_INVALID"),
                     ("ubuntu-24.04 a02", None, "REPORT_INVALID"),
-                    ("macos-14 b01", "0.00$", "SUCCESS"),
+                    ("macos-15 b01", "0.00$", "SUCCESS"),
                 ],
                 1,
                 3,

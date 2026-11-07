@@ -9,19 +9,18 @@ import re
 import socket
 import stat
 import subprocess
-import tarfile
 import time
 import uuid
 import zipfile
 from contextlib import contextmanager
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import requests
 
 
-VERSION = "1.14.4"
-DOWNLOAD_PREFIX = f"https://github.com/SagerNet/sing-box/releases/download/v{VERSION}/"
+VERSION = "26.1.23"
+DOWNLOAD_PREFIX = f"https://github.com/XTLS/Xray-core/releases/download/v{VERSION}/"
 MAX_ARCHIVE_SIZE = 100 * 1024 * 1024
 START_TIMEOUT = 15
 CHECK_TIMEOUT = 15
@@ -31,24 +30,24 @@ MAX_ENDPOINTS = 65535 - FIRST_PORT + 1
 
 ASSETS = {
     ("Linux", "amd64"): (
-        "sing-box-1.14.4-linux-amd64.tar.gz",
-        "699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968",
+        "Xray-linux-64.zip",
+        "85b23d6556f6fba9b7503c4f5ae567644af23004053e1f847ea267aec9ae4e71",
     ),
     ("Linux", "arm64"): (
-        "sing-box-1.14.4-linux-arm64.tar.gz",
-        "436441f76ee2f7fe21b5b2d426d3cb261a480455a704865789ad533e4273ec26",
+        "Xray-linux-arm64-v8a.zip",
+        "6478e00f7f474b47713d133cfe39acb6711cebce7d03753b0b7f2bc08705f79f",
     ),
     ("Darwin", "amd64"): (
-        "sing-box-1.14.4-darwin-amd64.tar.gz",
-        "eae86b9b033bba50b7c44ab719e4bfac0aca05efd28483390ed3aa510f32db25",
+        "Xray-macos-64.zip",
+        "2e88e9043c8d890f34c9aad165ec31e6622578aa3915410eef2da9260a17531a",
     ),
     ("Darwin", "arm64"): (
-        "sing-box-1.14.4-darwin-arm64.tar.gz",
-        "0d8c7f5ed5d587b0f1a5e9772a708ec3bfa4ac4c9329604b01d8d9c2ba406838",
+        "Xray-macos-arm64-v8a.zip",
+        "fe485185961202507fa6750da0aa453075349adf11569e658bbce2ee0f385d94",
     ),
     ("Windows", "amd64"): (
-        "sing-box-1.14.4-windows-amd64.zip",
-        "99185d75d314a07dbba4a130c8ad986cbeb629a07927975636b341ca61f991df",
+        "Xray-windows-64.zip",
+        "4a5e110939e2ab80f82c5605e92f16b7dc0f62b8e703f8635f81695bcdb9aa26",
     ),
 }
 
@@ -190,6 +189,13 @@ def _required_text(value):
     return value
 
 
+def _salamander_password(value):
+    value = _required_text(value)
+    if len(value.encode("utf-8")) < 4:
+        _node_fail()
+    return value
+
+
 def _server(value):
     value = _required_text(value)
     if value != value.strip() or any(character.isspace() for character in value):
@@ -279,12 +285,47 @@ def _transport(kind, path="", host="", service_name=""):
             transport["path"] = path
         if host:
             transport["headers"] = {"Host": host}
+        _ws_path(transport)
         return transport
     if kind in ("grpc", "gun"):
         if path or host:
             _node_fail()
         return {"type": "grpc", "service_name": _required_text(service_name)}
     _node_fail()
+
+
+def _ws_path(transport):
+    path = transport.get("path") or "/"
+    if not isinstance(path, str) or any(character in path for character in "\r\n\0"):
+        _node_fail()
+    parsed = urlsplit(path)
+    if parsed.scheme or parsed.netloc or parsed.fragment or not path.startswith("/"):
+        _node_fail()
+    if re.search(r"%(?![0-9a-fA-F]{2})", parsed.query):
+        _node_fail()
+    query = parse_qs(parsed.query, keep_blank_values=True, errors="strict")
+    sizes = query.get("ed", [])
+    if len(sizes) > 1:
+        _node_fail()
+    path_size = sizes[0] if sizes else None
+    if path_size is not None and (not re.fullmatch(r"[0-9]+", path_size) or int(path_size) >= 2**32):
+        _node_fail()
+    size = transport.get("max_early_data")
+    if size is not None and (type(size) is not int or not 0 <= size < 2**32):
+        _node_fail()
+    if size is not None and path_size is not None and size != int(path_size):
+        _node_fail()
+    header = transport.get("early_data_header_name")
+    active_size = size if size is not None else int(path_size or "0")
+    if header is not None and (not isinstance(header, str) or
+                              header.lower() != "sec-websocket-protocol" and (header or active_size)):
+        _node_fail()
+    if size is not None and path_size is None:
+        separator = "&" if parsed.query else ""
+        if "?" not in path:
+            separator = "?"
+        path += separator + f"ed={size}"
+    return path
 
 
 def _tls(server, query, required=False, reality=False):
@@ -314,6 +355,8 @@ def _tls(server, query, required=False, reality=False):
         "insecure": _bool(insecure_value),
     }
     if reality:
+        if tls["insecure"]:
+            _node_fail()
         fingerprint = query.get("fp") or "chrome"
         if fingerprint not in {
             "chrome", "firefox", "edge", "safari", "360", "qq", "ios", "android", "random", "randomized",
@@ -337,6 +380,7 @@ def _parse_vless(link, tag):
     _only_query(query, {
         "encryption", "flow", "security", "sni", "serverName", "insecure", "allowInsecure",
         "pbk", "publicKey", "sid", "shortId", "fp", "type", "path", "host", "serviceName", "service_name",
+        "ed", "eh",
     })
     if parsed.password is not None:
         _node_fail()
@@ -360,6 +404,24 @@ def _parse_vless(link, tag):
         query.get("type"), query.get("path", ""), query.get("host", ""),
         query.get("serviceName") or query.get("service_name", ""),
     )
+    if "ed" in query or "eh" in query:
+        if not transport or transport["type"] != "ws":
+            _node_fail()
+        if "ed" in query:
+            if not re.fullmatch(r"[0-9]+", query["ed"]):
+                _node_fail()
+            size = int(query["ed"])
+            if size >= 2**32:
+                _node_fail()
+            transport["max_early_data"] = size
+        if "eh" in query:
+            header = query["eh"]
+            if header and not re.fullmatch(r"[!#$%&'*+\-.^_`|~A-Za-z0-9]+", header):
+                _node_fail()
+            transport["early_data_header_name"] = header
+        _ws_path(transport)
+    if transport and (flow or security == "reality" and transport["type"] == "ws"):
+        _node_fail()
     if transport:
         outbound["transport"] = transport
     return outbound
@@ -448,7 +510,7 @@ def _parse_hysteria2(link, tag):
         if obfs != "salamander":
             _node_fail()
         obfs_password = query.get("obfs-password") or query.get("obfs_password")
-        outbound["obfs"] = {"type": "salamander", "password": _required_text(obfs_password)}
+        outbound["obfs"] = {"type": "salamander", "password": _salamander_password(obfs_password)}
     elif "obfs-password" in query or "obfs_password" in query:
         _node_fail()
     return outbound
@@ -522,43 +584,23 @@ def _archive_bytes(url):
 
 
 def _expected_member(asset):
-    if asset.endswith(".tar.gz"):
-        root = asset[:-7]
-        return f"{root}/sing-box", "sing-box"
-    if asset.endswith(".zip"):
-        root = asset[:-4]
-        return f"{root}/sing-box.exe", "sing-box.exe"
-    _binary_fail()
+    if not asset.endswith(".zip"):
+        _binary_fail()
+    return "xray.exe" if asset.startswith("Xray-windows-") else "xray"
 
 
 def _read_executable(asset, archive_data):
-    member_name, destination_name = _expected_member(asset)
-    if PurePosixPath(member_name).parts[:1] != (asset.rsplit(".", 2)[0] if asset.endswith(".tar.gz") else asset[:-4],):
-        _binary_fail()
-    if asset.endswith(".tar.gz"):
-        with tarfile.open(fileobj=io.BytesIO(archive_data), mode="r:gz") as archive:
-            try:
-                member = archive.getmember(member_name)
-            except KeyError:
-                _binary_fail()
-            if not member.isreg():
-                _binary_fail()
-            stream = archive.extractfile(member)
-            if stream is None:
-                _binary_fail()
+    destination_name = _expected_member(asset)
+    with zipfile.ZipFile(io.BytesIO(archive_data), mode="r") as archive:
+        members = [member for member in archive.infolist() if member.filename == destination_name]
+        if len(members) != 1:
+            _binary_fail()
+        member = members[0]
+        file_type = stat.S_IFMT(member.external_attr >> 16)
+        if member.is_dir() or file_type not in (0, stat.S_IFREG) or member.file_size > MAX_ARCHIVE_SIZE:
+            _binary_fail()
+        with archive.open(member, "r") as stream:
             data = stream.read(MAX_ARCHIVE_SIZE + 1)
-    else:
-        with zipfile.ZipFile(io.BytesIO(archive_data), mode="r") as archive:
-            try:
-                member = archive.getinfo(member_name)
-            except KeyError:
-                _binary_fail()
-            mode = member.external_attr >> 16
-            file_type = stat.S_IFMT(mode)
-            if member.is_dir() or file_type not in (0, stat.S_IFREG):
-                _binary_fail()
-            with archive.open(member, "r") as stream:
-                data = stream.read(MAX_ARCHIVE_SIZE + 1)
     if not data or len(data) > MAX_ARCHIVE_SIZE:
         _binary_fail()
     return destination_name, data
@@ -592,11 +634,106 @@ def download_binary(system, machine, directory):
         _binary_fail()
 
 
+def _xray_stream(outbound):
+    transport = outbound.get("transport") or {}
+    if not isinstance(transport, dict):
+        _node_fail()
+    network = transport.get("type", "tcp")
+    if network not in {"tcp", "ws", "grpc"}:
+        _node_fail()
+    stream = {"network": network}
+    if network == "ws":
+        headers = transport.get("headers", {})
+        if not isinstance(headers, dict) or set(headers) - {"Host"}:
+            _node_fail()
+        stream["wsSettings"] = {"path": _ws_path(transport)}
+        if headers.get("Host"):
+            stream["wsSettings"]["host"] = _required_text(headers["Host"])
+    elif network == "grpc":
+        stream["grpcSettings"] = {"serviceName": _required_text(transport.get("service_name"))}
+    tls = outbound.get("tls")
+    if tls:
+        if not isinstance(tls, dict) or tls.get("enabled") is not True:
+            _node_fail()
+        reality = tls.get("reality")
+        if reality:
+            utls = tls.get("utls", {})
+            if not isinstance(reality, dict) or not isinstance(utls, dict) or network == "ws" or tls.get("insecure"):
+                _node_fail()
+            stream["security"] = "reality"
+            stream["realitySettings"] = {
+                "serverName": _server(tls.get("server_name")),
+                "fingerprint": _required_text(utls.get("fingerprint")),
+                "publicKey": _required_text(reality.get("public_key")),
+                "shortId": _required_text(reality.get("short_id")),
+            }
+        else:
+            stream["security"] = "tls"
+            stream["tlsSettings"] = {
+                "serverName": _server(tls.get("server_name")), "allowInsecure": _bool(tls.get("insecure")),
+            }
+    if outbound.get("flow") and (network != "tcp" or not tls):
+        _node_fail()
+    if outbound["type"] == "hysteria2":
+        if transport or not tls or tls.get("reality"):
+            _node_fail()
+        stream["network"] = "hysteria"
+        stream["hysteriaSettings"] = {"version": 2, "auth": _required_text(outbound.get("password"))}
+        obfs = outbound.get("obfs")
+        if obfs:
+            if not isinstance(obfs, dict) or obfs.get("type") != "salamander":
+                _node_fail()
+            stream["udpmasks"] = [{"type": "salamander", "settings": {"password": _salamander_password(obfs.get("password"))}}]
+    return stream
+
+
+def _xray_outbound(outbound, tag):
+    kind = outbound.get("type")
+    settings = {"address": _server(outbound.get("server")), "port": _port(outbound.get("server_port"))}
+    if kind in {"vless", "vmess"}:
+        settings["id"] = _uuid(outbound.get("uuid"))
+        if kind == "vless":
+            settings["encryption"] = "none"
+            if outbound.get("flow"):
+                if outbound["flow"] != "xtls-rprx-vision":
+                    _node_fail()
+                settings["flow"] = outbound["flow"]
+        else:
+            if outbound.get("security", "auto") != "auto":
+                _node_fail()
+            settings["security"] = "auto"
+    elif kind == "trojan":
+        if not outbound.get("tls"):
+            _node_fail()
+        settings["password"] = _required_text(outbound.get("password"))
+    elif kind == "hysteria2":
+        settings["version"] = 2
+    elif kind == "socks":
+        if outbound.get("version") != "5":
+            _node_fail()
+        if "username" in outbound:
+            settings["user"] = _required_text(outbound["username"])
+            password = outbound.get("password")
+            if not isinstance(password, str) or any(character in password for character in "\r\n\0"):
+                _node_fail()
+            settings["pass"] = password
+        elif "password" in outbound:
+            _node_fail()
+    else:
+        _node_fail()
+    return {"protocol": "hysteria" if kind == "hysteria2" else kind,
+            "tag": tag, "settings": settings, "streamSettings": _xray_stream(outbound)}
+
+
 def build_proxy_config(outbounds):
     try:
         if not isinstance(outbounds, dict) or not 1 <= len(outbounds) <= MAX_ENDPOINTS:
             raise ValueError
-        config = {"log": {"disabled": True}, "inbounds": [], "outbounds": [], "route": {"rules": []}}
+        config = {
+            "log": {"loglevel": "none"}, "inbounds": [],
+            "outbounds": [{"protocol": "blackhole", "tag": "blocked", "settings": {}}],
+            "routing": {"rules": []},
+        }
         endpoints = {}
         for offset, candidate_tag in enumerate(sorted(outbounds)):
             outbound = outbounds[candidate_tag]
@@ -610,13 +747,14 @@ def build_proxy_config(outbounds):
             inbound_tag = f"in-{candidate_tag}"
             outbound_tag = f"out-{candidate_tag}"
             config["inbounds"].append({
-                "type": "http", "tag": inbound_tag, "listen": "127.0.0.1", "listen_port": port,
+                "protocol": "http", "tag": inbound_tag, "listen": "127.0.0.1", "port": port, "settings": {},
             })
-            config["outbounds"].append(dict(outbound, tag=outbound_tag))
-            config["route"]["rules"].append({
-                "inbound": [inbound_tag], "action": "route", "outbound": outbound_tag,
+            config["outbounds"].append(_xray_outbound(outbound, outbound_tag))
+            config["routing"]["rules"].append({
+                "type": "field", "inboundTag": [inbound_tag], "outboundTag": outbound_tag,
             })
             endpoints[candidate_tag] = f"http://127.0.0.1:{port}"
+        config["routing"]["rules"].append({"type": "field", "network": "tcp,udp", "outboundTag": "blocked"})
         return config, endpoints
     except (TypeError, ValueError):
         raise ValueError("PROXY_START_FAIL")
@@ -636,12 +774,21 @@ def _creationflags():
     return getattr(subprocess, "CREATE_NO_WINDOW", 0) if platform.system() == "Windows" else 0
 
 
+def _native_environment():
+    environment = os.environ.copy()
+    # The compatibility core's Go runtime predates the Linux MPTCP security fix.
+    settings = [setting for setting in environment.get("GODEBUG", "").split(",")
+                if setting and setting.split("=", 1)[0] != "multipathtcp"]
+    environment["GODEBUG"] = ",".join(settings + ["multipathtcp=0"])
+    return environment
+
+
 def _check_config(binary, config_path):
     try:
         result = subprocess.run(
-            [str(binary), "check", "-c", str(config_path)], shell=False,
+            [str(binary), "run", "-test", "-c", str(config_path)], shell=False,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=CHECK_TIMEOUT,
-            creationflags=_creationflags(),
+            creationflags=_creationflags(), env=_native_environment(),
         )
         return result.returncode == 0
     except (OSError, subprocess.SubprocessError):
@@ -701,8 +848,7 @@ def _stop_child(child):
         child.wait(timeout=SHUTDOWN_TIMEOUT)
 
 
-@contextmanager
-def group_proxy(outbounds, binary, directory):
+def start_proxy(outbounds, binary, directory):
     child = None
     try:
         if not isinstance(outbounds, dict) or not 1 <= len(outbounds) <= MAX_ENDPOINTS:
@@ -741,7 +887,7 @@ def group_proxy(outbounds, binary, directory):
             child = subprocess.Popen(
                 [str(binary), "run", "-c", str(config_path)], shell=False,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                creationflags=_creationflags(),
+                creationflags=_creationflags(), env=_native_environment(),
             )
         except OSError:
             _proxy_fail()
@@ -756,6 +902,16 @@ def group_proxy(outbounds, binary, directory):
             if time.monotonic() >= deadline:
                 _proxy_fail()
             time.sleep(0.05)
+        return child, endpoints
+    except BaseException:
+        _stop_child(child)
+        raise
+
+
+@contextmanager
+def group_proxy(outbounds, binary, directory):
+    child, endpoints = start_proxy(outbounds, binary, directory)
+    try:
         yield endpoints
     finally:
         _stop_child(child)

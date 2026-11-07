@@ -45,7 +45,7 @@ class WorkflowContractTests(unittest.TestCase):
         source = Path(".github/workflows/Smoke.yml").read_text(encoding="utf-8")
         self.assertIn("ubuntu-24.04", source)
         self.assertIn("windows-2022", source)
-        self.assertIn("macos-14", source)
+        self.assertIn("macos-15", source)
         self.assertIn("python tests/smoke.py", source)
         self.assertNotIn("secrets.", source)
 
