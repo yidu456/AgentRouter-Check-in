@@ -123,7 +123,7 @@ def _validate_results(rows, expected_ids):
 
     seen = set()
     for row in rows:
-        if not isinstance(row, dict) or not RESULT_KEYS <= set(row) or set(row) - (RESULT_KEYS | {"exit_ip"}):
+        if not isinstance(row, dict) or not RESULT_KEYS <= set(row) or set(row) - (RESULT_KEYS | {"exit_ip", "user_group"}):
             _invalid()
         account_id = row["id"]
         quota = row["quota"]
@@ -141,6 +141,11 @@ def _validate_results(rows, expected_ids):
                 _invalid()
         elif quota is not None:
             _invalid()
+        if row.get("user_group") is not None:
+            from account_observations import safe_user_group
+
+            if safe_user_group(row["user_group"]) is None:
+                _invalid()
         exit_ip = row.get("exit_ip")
         if exit_ip is not None:
             if not isinstance(exit_ip, str) or len(exit_ip) > 45 or "%" in exit_ip:
@@ -164,7 +169,7 @@ def _safe_report(manifest_group, rows):
         "group_id": manifest_group["group_id"],
         "os": manifest_group["os"],
         "results": [
-            {key: row[key] for key in ("id", "quota", "stage", "exit_ip") if key in row}
+            {key: row[key] for key in ("id", "quota", "stage", "exit_ip", "user_group") if key in row}
             for row in rows
         ],
     }
@@ -223,6 +228,8 @@ def combine_reports(manifest: dict, reports_dir: Path, details: bool = False) ->
                      {"quota": row["quota"], "balance": balance, "exit_ip": row.get("exit_ip")} if details else balance,
                      row["stage"])
                 )
+                if details and "user_group" in row:
+                    group_rows[-1][1]["user_group"] = row["user_group"]
         except Exception:
             group_rows = [
                 (f"{manifest_group['os']} {account_id}",
@@ -267,13 +274,16 @@ def _send_rows(rows, notification_config):
     success_count = sum(stage == "SUCCESS" for _, _, stage in rows)
     html_message, plain_message = format_notifications(rows, success_count, len(rows))
     try:
-        send_notifications(html_message, plain_message, config=notification_config)
+        if notification_config is None:
+            send_notifications(html_message, plain_message, config=None)
+        else:
+            send_notifications(html_message, plain_message, config=notification_config, wecom_markdown=True)
     except Exception:
         print("NOTIFY_FAIL", file=sys.stderr)
 
 
 def observe_balances(rows: list, config: dict, history_path: Path | None = None) -> list:
-    from account_observations import apply_history, load_history, save_history
+    from account_observations import apply_history, enrich_countries, load_history, save_history
     from routing import RUNNERS
 
     accounts = {f"{RUNNERS[a['os']]} {a['id']}": a for a in config["accounts"]}
@@ -290,7 +300,7 @@ def observe_balances(rows: list, config: dict, history_path: Path | None = None)
                     stream.write("BALANCE_HISTORY_READY=true\n")
         except OSError:
             print("HISTORY_SAVE_FAIL", file=sys.stderr)
-    return enriched
+    return enrich_countries(enriched) if config["notifications"] else enriched
 
 
 def _notify(manifest_path, reports_dir):

@@ -12,6 +12,7 @@ import json
 import platform
 import tempfile
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 from playwright.sync_api import sync_playwright, Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError
@@ -262,9 +263,12 @@ def send_telegram(message: str, token: str | None = None, chat_id: str | None = 
         for index, chunk in enumerate(split_utf8_text(message, limit=3500)):
             if index:
                 time.sleep(1.1)
+            data = {"chat_id": chat_id, "text": chunk, "parse_mode": "HTML"}
+            if '<a href="' in chunk:
+                data["link_preview_options"] = {"is_disabled": True}
             response = requests.post(
                 url,
-                json={"chat_id": chat_id, "text": chunk, "parse_mode": "HTML"},
+                json=data,
                 timeout=30,
                 allow_redirects=False,
             )
@@ -307,18 +311,19 @@ def split_utf8_text(message: str, limit: int = 2048) -> list[str]:
     return chunks
 
 
-def send_wecom(message: str, webhook_url: str = "") -> bool:
+def send_wecom(message: str, webhook_url: str = "", markdown: bool = False) -> bool:
     from routing import validate_webhook_url
 
     if not message or not validate_webhook_url(webhook_url):
         return False
+    mode = "markdown" if markdown else "text"
     try:
         for index, chunk in enumerate(split_utf8_text(message)):
             if index:
                 time.sleep(3.1)
             response = requests.post(
                 webhook_url,
-                json={"msgtype": "text", "text": {"content": chunk}},
+                json={"msgtype": mode, mode: {"content": chunk}},
                 timeout=30,
                 allow_redirects=False,
             )
@@ -335,7 +340,7 @@ def send_wecom(message: str, webhook_url: str = "") -> bool:
 
 
 def send_notifications(telegram_message: str, plain_message: str,
-                       config: dict | None = None) -> dict:
+                       config: dict | None = None, wecom_markdown: bool = False) -> dict:
     settings = ({"telegram": {"bot_token": TG_BOT_TOKEN, "chat_id": TG_CHAT_ID}}
                 if config is None else config)
     outcomes = {"telegram": None, "wecom": None}
@@ -349,13 +354,18 @@ def send_notifications(telegram_message: str, plain_message: str,
             outcomes["telegram"] = False
     if wecom.get("webhook_url"):
         try:
-            outcomes["wecom"] = send_wecom(plain_message, wecom["webhook_url"])
+            outcomes["wecom"] = (send_wecom(plain_message, wecom["webhook_url"], markdown=True)
+                                 if wecom_markdown else send_wecom(plain_message, wecom["webhook_url"]))
         except Exception:
             outcomes["wecom"] = False
     for channel, outcome in outcomes.items():
         if outcome is not None:
             log(f"通知 {channel}: {'SUCCESS' if outcome else 'FAILED'}")
     return outcomes
+
+
+def _escape_wecom_markdown(value: str) -> str:
+    return "".join("\\" + char if char in "\\`*_{}[]()#+!<>|" else char for char in value)
 
 
 def format_notifications(results: list, success_count: int, total: int) -> tuple[str, str]:
@@ -372,7 +382,26 @@ def format_notifications(results: list, success_count: int, total: int) -> tuple
             if quota is not None and previous is not None:
                 delta = f"{(quota - previous) / 500000:+.2f}$"
             suffix = (f": {status}\n  上次余额：{before}\n  余额变化：{delta}"
-                      f"\n  当前余额：{current}\n  代理出口 IP：{balance.get('exit_ip') or '未获取'}")
+                      f"\n  当前余额：{current}")
+            group = balance.get("user_group") or "未获取"
+            country = balance.get("country")
+            country_label = f"{country['name']}（{country['code']}）" if country else "未获取"
+            html_suffix = suffix + f"\n  用户分组：{group}\n  出口国家：{country_label}"
+            markdown_suffix = suffix + (f"\n  用户分组：{_escape_wecom_markdown(group)}"
+                                        f"\n  出口国家：{_escape_wecom_markdown(country_label)}")
+            from account_observations import _canonical_ip
+
+            ip = _canonical_ip(balance.get("exit_ip"))
+            html_ip = markdown_ip = "未获取"
+            if ip:
+                url = f"https://ippure.com/?ip={quote(ip, safe='')}"
+                html_ip = f'<a href="{html.escape(url, quote=True)}">{ip}</a>'
+                markdown_ip = f"[{ip}]({url})"
+            message_lines.append(prefix + html.escape(label) + html.escape(html_suffix)
+                                 + f"\n  代理出口 IP：{html_ip}")
+            plain_lines.append(prefix + _escape_wecom_markdown(label) + markdown_suffix
+                               + f"\n  代理出口 IP：{markdown_ip}")
+            continue
         elif balance is None:
             suffix = f": 签到失败（{stage}）"
             prefix = "❌ "
@@ -1859,7 +1888,7 @@ def browser_login_complete(
                 )
 
             # ------------------------------------------------
-            # 只读取 quota
+            # 读取 quota
             # ------------------------------------------------
 
             quota = user_data.get(
@@ -1879,7 +1908,7 @@ def browser_login_complete(
                 )
 
             # ------------------------------------------------
-            # 只返回 quota
+            # 仅返回余额及经过校验的用户组，不返回其余账户资料。
             #
             # 不再返回：
             # user_id
@@ -1891,6 +1920,12 @@ def browser_login_complete(
             result = {
                 "quota": quota
             }
+            if isolated:
+                from account_observations import safe_user_group
+
+                group = safe_user_group(user_data.get("group"))
+                if group is not None:
+                    result["user_group"] = group
 
             stage = "SUCCESS"
 
@@ -2128,7 +2163,13 @@ def checkin_assigned_account(account: dict, candidates: list[dict], profile: dic
             observations["exit_ip"] = query_exit_ip(candidate)
         quota, last_stage = _safe_login_result(result, stage)
         if last_stage == "SUCCESS":
-            return {"quota": quota}, last_stage
+            from account_observations import safe_user_group
+
+            safe_result = {"quota": quota}
+            group = safe_user_group(result.get("user_group"))
+            if group is not None:
+                safe_result["user_group"] = group
+            return safe_result, last_stage
         log(f"{account.get('id', 'account')} attempt{attempt}: {last_stage}")
     return None, last_stage
 
@@ -2232,6 +2273,8 @@ def run_isolated_group(routes: list[dict], manifest_group: dict, result_path: Pa
                                                             observations=observations)
                     quota, stage = _safe_login_result(result, stage)
                     row.update(quota=quota, stage=stage, exit_ip=observations.get("exit_ip"))
+                    if result and "user_group" in result:
+                        row["user_group"] = result["user_group"]
                     write_report(result_path, manifest_group, rows)
                     log(f"{row['id']}: {stage}")
     except Exception:
@@ -2339,7 +2382,8 @@ def main():
             history_path = Path(os.environ.get("BALANCE_HISTORY_PATH", ".superpowers/checkin-history/balances.json"))
             results = observe_balances(results, config, history_path)
             count = sum(stage == "SUCCESS" for _, _, stage in results)
-            send_notifications(*format_notifications(results, count, len(results)), config=notification_config)
+            send_notifications(*format_notifications(results, count, len(results)),
+                               config=notification_config, wecom_markdown=True)
             sys.exit(int(count != len(results)))
     except KeyboardInterrupt:
         sys.exit(130)

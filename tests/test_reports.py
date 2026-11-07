@@ -37,7 +37,7 @@ def result(account_id="a01", quota=500000, stage="SUCCESS"):
 
 def details(quota=None):
     return {"quota": quota, "balance": f"{quota / 500000:.2f}$" if quota is not None else None,
-            "exit_ip": None, "previous_quota": None}
+            "exit_ip": None, "previous_quota": None, "country": None}
 
 
 def write_raw_report(root, value, group_id="g01"):
@@ -348,7 +348,8 @@ class NotifyCliTests(unittest.TestCase):
             self.app_calls.append(("format", rows, success_count, total))
             return "html-summary", "plain-summary"
 
-        def send_notifications(html, plain, config=None):
+        def send_notifications(html, plain, config=None, wecom_markdown=False):
+            self.assertEqual(wecom_markdown, config is not None)
             self.app_calls.append(("send", html, plain, config))
             return {"telegram": True, "wecom": None}
 

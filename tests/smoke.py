@@ -28,7 +28,7 @@ class Fixture(BaseHTTPRequestHandler):
     def do_GET(self):
         self.server.requests_seen += 1
         is_api = self.path == "/api/user/self"
-        body = json.dumps({"success": True, "data": {"quota": 500000}}).encode() if is_api else LOGIN_PAGE
+        body = json.dumps({"success": True, "data": {"quota": 500000, "group": "default"}}).encode() if is_api else LOGIN_PAGE
         self.send_response(200)
         self.send_header("Content-Type", "application/json" if is_api else "text/html")
         self.send_header("Content-Length", str(len(body)))
@@ -204,7 +204,7 @@ def main():
                 assert app.run_isolated_group(routes, group, result_path) == 0, "RANDOM_GROUP_FAIL"
             random_result = json.loads(result_path.read_text(encoding="utf-8"))["results"][0]
             assert random_result == {"id": "random_smoke", "quota": 500000,
-                                     "stage": "SUCCESS", "exit_ip": "203.0.113.10"}
+                                     "stage": "SUCCESS", "exit_ip": "203.0.113.10", "user_group": "default"}
             with group_proxy(outbounds, binary, Path(directory)) as endpoints:
                 endpoint = endpoints["a01_p01"]
                 check_browser_profile(endpoint)
