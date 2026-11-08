@@ -175,7 +175,7 @@ ID 会出现在清单、日志、报告和通知，不要用邮箱或密钥。�
 | `viewport` | 对象，恰好整数 `width`/`height`，各 320～8192 | 1440 × 900 |
 | `screen` | 同上，各维不能小于 viewport | 填了 viewport 则跟随；否则 1440 × 900 |
 | `device_scale_factor` | 严格整数 `1`/`2` | `1` |
-| `locale` | `zh-CN`/`en-US` | `zh-CN` |
+| `locale` | `auto`（按出口国家）或固定 `zh-CN`/`en-US` | `zh-CN` |
 | `timezone_id` | 建议省略；旧配置字段仍可解析，但登录时由出口检测结果覆盖 | 登录前自动检测 |
 | `color_scheme` | `light`/`dark` | `light` |
 
@@ -186,7 +186,7 @@ ID 会出现在清单、日志、报告和通知，不要用邮箱或密钥。�
   "profile": {
     "viewport": {"width": 1280, "height": 720},
     "screen": {"width": 1920, "height": 1080},
-    "device_scale_factor": 2, "locale": "en-US",
+    "device_scale_factor": 2, "locale": "auto",
     "color_scheme": "dark"
   }
 }
@@ -196,7 +196,9 @@ ID 会出现在清单、日志、报告和通知，不要用邮箱或密钥。�
 
 **自动时区顺序：** 当前候选代理 → IPify 检测出口 IP → IPWHOIS 查询该 IP 的国家与 `timezone.id` → 校验 IANA 时区 → 新建浏览器环境 → 登录。两次请求均通过当前候选代理，单次超时 5 秒，禁止重定向和直连回退；只发送出口 IP，不发送账号凭据。无需 API 密钥，查询服务故障、限流或不能返回有效时区时跳过候选。切换固定或随机节点都会重新检测。
 
-按 IP 的具体时区设置，不能仅按国家映射：例如美国西部可能是 `America/Los_Angeles`，东部可能是 `America/New_York`；夏令时随时区数据库和浏览器规则处理。不修改语言、OS、Actions/Cloudflare 的定时设置。IP 定位并非权威，动态出口可能变化，也不保证消除账号关联。
+按 IP 的具体时区设置，不能仅按国家映射：例如美国西部可能是 `America/Los_Angeles`，东部可能是 `America/New_York`；夏令时随时区数据库和浏览器规则处理。不修改 OS 或 Actions/Cloudflare 的定时设置。IP 定位并非权威，动态出口可能变化，也不保证消除账号关联。
+
+**自动语言：** 设置 `"locale": "auto"` 时，复用同一次国家查询：SG→`en-SG`、KR→`ko-KR`、JP→`ja-JP`、DE→`de-DE`、US→`en-US`、HK→`zh-HK`；其他有效国家用 `en-US`。国家或时区查询失败仍跳过节点，不用默认语言掩盖失败。每次换节点在新建浏览器前重新解析语言；不改写原始配置或随机池指纹。固定 `zh-CN`/`en-US` 保持不变，省略仍为 `zh-CN`。语言只按国家选择，不是每个 IP 随机生成不同指纹。
 
 旧 `timezone_id` 允许 `Asia/Shanghai`、`Asia/Tokyo`、`America/New_York`、`Europe/London`、`Asia/Singapore`、`Asia/Seoul`、`Europe/Berlin`、`Asia/Hong_Kong`；它们只为兼容旧 JSON 保留，不覆盖自动检测。新模板直接省略此字段。本地依赖需包含 `tzdata`，为 Windows 等缺少系统 IANA 数据库的环境提供有效时区校验；工作流已安装。
 
@@ -212,7 +214,7 @@ ID 会出现在清单、日志、报告和通知，不要用邮箱或密钥。�
 
 两渠道可同时配置（见完整例）；关闭一个就删掉该对象，全部关闭省略 `notifications` 或 `{}`，不能用空渠道对象或 `null`。微信群机器人无需且不支持 `corp_id`、`agent_id`、`corp_secret`。
 
-全部执行组结束后才发最终汇总，缺失/损坏报告计失败，不发送中途日志。超长汇总分段，企业微信每段 ≤2048 UTF-8 字节并限速；渠道失败相互隔离，发送失败不自动重试。字段合法不代表密钥/权限/Chat ID 可用；整个 JSON 非法时不从坏配置提取密钥、不混用旧变量，可能只有 Actions 状态和安全日志。
+全部执行组结束后才发最终汇总，缺失/损坏报告计失败，不发送中途日志。超长汇总分段，企业微信每段 ≤2048 UTF-8 字节并限速；渠道失败相互隔离，发送失败不自动重试。末行显示最终汇总生成时间，例如 `运行时间：2026-11-08 21:30:00（北京时间 UTC+8）`，不是耗时；失败结果也有此时间和中文原因/处理建议。字段合法不代表密钥/权限/Chat ID 可用；整个 JSON 非法时不从坏配置提取密钥、不混用旧变量，可能只有 Actions 状态和安全日志。
 
 ## 6. 节点链接支持的字段与完整示例
 
@@ -429,6 +431,8 @@ python -m unittest discover -s tests
 
 报告只保留最后失败阶段，日志另存各尝试阶段，不能仅看最终码就判断代理服务器坏了。当前表单适配中文“使用 邮箱或用户名 登录”、英文 `Sign in with Email or Username` 和可见 `username`/`password`/`button[type="submit"]`；其他网站仍可能不兼容。就绪启发式放行不代表真正通过 WAF/认证；排查只核对公开表单或脱敏阶段，不提供密码、Cookie、localStorage 或个人截图。
 
+`EXIT_IP_FAIL` 后立即尝试账号自己的下一候选，不在失败节点重复查询。日志显示 `切换到候选 2/3`、每个失败阶段，以及用尽时实际尝试数量。`EXIT_DIAGNOSTIC` 进一步区分 `EXIT_HTTP_ERROR`（仅数字状态）、`EXIT_TIMEOUT`、`EXIT_REQUEST_FAIL`、`EXIT_READ_FAIL`、`EXIT_RESPONSE_INVALID`、`EXIT_RESPONSE_TOO_LARGE` 和 `EXIT_PROXY_INVALID`。这些表示检测失败，不能据此断言 IP 被网站封禁；多个节点也可能共用出口 IP。
+
 真实 JSON、订阅、节点、API Token、Webhook 只放 Secret。拿到完整 Secret 的任务能读取全部账号/通知凭据，多系统/进程不等于互不信任的凭据隔离。已公开的凭据应轮换，不只是删文本。
 
 内核固定 Xray **26.1.23** 以兼容显式 `allowInsecure`；默认仍验证证书。显式 `1` 失去服务端身份验证，较新版本已移除该开关。该兼容版本不是最新安全基线，禁用 MPTCP 不代表所有后续修复已包含，也不开放受 Hy2/gRPC CA 固定问题影响的 CA 固定字段；长期应使用有效证书、删不安全选项后升级，不靠放宽校验或直连掩盖故障。
@@ -513,6 +517,8 @@ PREPARE_DIAGNOSTIC field=subscription_url reason=POOL_TOO_SMALL distinct=15 excl
 
 更新后请新建 **Run workflow → main**，不要重跑旧记录；旧记录会使用原提交。日志可用于定位实际原因，但单凭通用 `ROUTE_CONFIG_FAIL` 无法断定是订阅格式、节点容量或配置问题。
 
+安全诊断码仍保留，同时在日志、Actions 错误标注和 Summary 中显示中文“配置位置 / 原因 / 处理”。例如 `groups.windows.accounts[0].id + INVALID_CHOICE` 会解释 Windows 组第 1 个账号的 id 要求：1～32 字符、英文字母开头、仅含字母数字和 `_`/`-`，示例 `win01`。提示只使用白名单字段、固定说明和校验后的数字，不回显错误字段值、响应正文或原始异常。Summary 写入失败不改变业务结果。
+
 ## 8. 通知中的余额、用户组和出口
 
 无需额外 JSON 字段/API 密钥，两渠道显示同一份最终信息：
@@ -530,7 +536,7 @@ ubuntu-24.04 ubuntu01: 登录成功
 - 上次余额来自同账号**上次登录成功且读到有效余额的运行**，不是本次登录前实时余额；净变化以未舍入整数 quota 计算，500000 quota = 1 美元，显示两位小数。消费/充值/人工调整/其他客户端可能包含在差额内，不能称“签到奖励”；负变化如实显示，零余额合法。
 - 首次/缓存丢失、过期、清理/换分支/账号 ID、站点、用户名变更时基线未知，密码变更不改身份；登录失败或余额不可用不覆盖既有基线，当前余额“未获取”、变化“未知”，其他账号有效余额仍保存。Actions notify 使用按分支区分的缓存，本地默认 `.superpowers/checkin-history/balances.json`；只保存身份 SHA-256 摘要及整数 quota，不存原用户名、密码、API Token、节点、机器人密钥或 IP。摘要可关联猜测身份，缓存访问者能看到余额。
 - 新模式在每个候选登录前，经该代理请求 `https://api.ipify.org` 并校验 IPv4/IPv6；随后必须取得国家和有效时区才登录。失败跳过候选，换节点重查。报告保留最终尝试/成功节点的观测，不是节点服务器/本地端口/runner 公网 IP；轮转或按目标分流可与目标站实际所见不同，不保证独立出口或防关联。
-- Telegram HTML 和企业微信 Markdown 把有效 IP 链接到 `https://ippure.com/?ip=<URL编码IP>`，IPv4/IPv6 均支持，未获取不生成链接。Telegram 关闭网页预览；程序不主动打开定位页，但读者点击会向 IPPure 暴露 IP，其他客户端预览行为由客户端决定。
+- Telegram 将有效 IPv4/IPv6 显示为代码文本，并在对应消息段附原生“复制 IP”按钮；只复制 IP，不打开网页，不需要新增机器人监听服务。企业微信群机器人 Webhook 没有原生剪贴板按钮，只显示纯 IP，供客户端长按/选中复制。未获取不生成按钮，客户端支持程度以实际版本为准；通知不再包含 IPPure 链接。
 - 新报告的国家/时区复用登录前通过代理取得的 `https://ipwho.is/<IP>` 结果，无通知渠道也必须检测；汇总不再查询或用另一结果覆盖它。兼容没有国家字段的旧报告时，才保留原来的同 IP 单次国家查询。请求无密钥、带超时和 4 KiB 限长，校验 IP 一致，禁止重定向；只发送出口 IP，不发送账号/Cookie/凭据。查询服务有免费限额，故障、限流、定位误差和规则变化会影响可用性。
 - 用户组来自登录站点 `/api/user/self` 的 `data.group`，不是执行组 `g01`；仅 1～64 个可打印字符，无首尾空白/换行/控制字符。缺失/非法显示“未获取”，不额外登录或查询；报告保存、消息转义，不存入余额缓存。
 - 完整 IP、用户组、余额进入短期结果 artifact 和通知，国家查询接收者也能看到 IP；artifact/cache 和机器人接收者可能看到活动信息，不是匿名数据。旧变量模式不新增历史/IP/国家查询；企业微信保留分段限速及发送隔离，文本发送函数默认行为不变。

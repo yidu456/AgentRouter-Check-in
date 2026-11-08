@@ -283,8 +283,13 @@ def _new_notification_config():
 
 def _send_rows(rows, notification_config):
     from app import format_notifications, send_notifications
+    from routing import emit_help, failure_help
 
     success_count = sum(stage == "SUCCESS" for _, _, stage in rows)
+    for _, _, stage in rows:
+        if stage != "SUCCESS":
+            code = stage if stage in FAILURE_STAGES else "UNKNOWN"
+            emit_help(f"最终结果 {code}。{failure_help(code)}", error=True)
     html_message, plain_message = format_notifications(rows, success_count, len(rows))
     try:
         if notification_config is None:
@@ -330,8 +335,11 @@ def _notify(manifest_path, reports_dir):
     prepare_succeeded = os.environ.get("PREPARE_RESULT") == "success"
     try:
         notification_config, config = _new_notification_config()
-    except Exception:
+    except Exception as error:
         print("ROUTE_CONFIG_FAIL", file=sys.stderr)
+        from routing import diagnostic_help, emit_help
+
+        emit_help(diagnostic_help(getattr(error, "diagnostic", None)), error=True)
         return 1
 
     if not prepare_succeeded:

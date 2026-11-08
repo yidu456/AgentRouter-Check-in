@@ -30,7 +30,7 @@ GitHub Actions 使用 Playwright Chromium 和 Xray 代理登录完成签到；�
           "username": "user2@example.com",
           "password": "example-secret-two",
           "proxies": [{"link": "socks5://proxy2.example.com:1080"}],
-          "profile": {"viewport": {"width": 1440, "height": 900}, "locale": "zh-CN"}
+          "profile": {"viewport": {"width": 1440, "height": 900}, "locale": "auto"}
         }
       ]
     },
@@ -48,6 +48,8 @@ GitHub Actions 使用 Playwright Chromium 和 Xray 代理登录完成签到；�
 
 每个候选节点登录前，先通过该代理检测出口 IP，再查询国家和具体 IANA 时区，用检测到的时区创建浏览器。无需填写 `profile.timezone_id`；换节点会重新检测。IP 或时区查询失败就跳过该节点，所有候选失败则不登录，不用默认时区或直连兜底。
 
+`profile.locale: "auto"` 会随新节点的国家切换语言：SG→`en-SG`、KR→`ko-KR`、JP→`ja-JP`、DE→`de-DE`、US→`en-US`、HK→`zh-HK`，其他国家用 `en-US`。显式固定 `zh-CN`/`en-US` 不变；省略仍默认 `zh-CN`。不同节点可能共用出口 IP，不能保证独立出口。
+
 完整字段、订阅随机节点、协议链接、固定 profile 和可选网站管理 API 凭据见 **[配置手册](docs/configuration.md)**。不要填写 Clash YAML、Xray 内核配置，也不要把真实凭据提交到仓库。
 
 ## Cloudflare 随机触发与管理
@@ -62,7 +64,7 @@ Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个�
 4. 管理页分为 **仓库管理 / 配置检查 / 运行日志**，分别显示操作和下次时间、错误字段与建议、按仓库分类的调度记录。
 5. 确认各目标默认分支的旧 `on.schedule` 已关闭，保留 `workflow_dispatch`。当前版本默认关闭内置 Cron；如果你另行开启，两套定时都可能运行。
 
-新目标默认开启；明确 `enabled:false` 和已有数据库关闭状态不重置。手动运行需要确认，日志删除不改变日程。Worker 企业微信通知仅说明 GitHub 是否受理触发，不是 Actions 已完成或签到成功。
+新目标默认开启；首次登录管理页会为已开启且 Token 有效的新目标保存下一次随机时间，无需关闭再开启。刷新不重新抽时间，也不立即触发；缺失的未来 Alarm 可按原时间恢复。明确 `enabled:false` 和已有数据库关闭状态不重置。手动运行需要确认，日志删除不改变日程。Worker 企业微信通知仅说明 GitHub 是否受理触发，不是 Actions 已完成或签到成功。
 
 ## 成功与余额怎么理解
 
@@ -71,7 +73,8 @@ Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个�
 - **上次余额**来自上次成功取得并保存的额度；**余额变化**是本次余额减上次余额，是两次观测间的净变化，不保证全部为签到奖励。
 - 历史只保存匿名身份键与额度，通过 Actions cache 跨运行恢复。首次运行、身份改变、缓存缺失/清理或读写失败时不能倒推出上次余额，会明确提示原因；保留稳定 `id`、`site`、`username`。
 - 默认复用浏览器登录态读取网站用户信息，不需要另配 API 密钥。可选网站账户管理 token 只补充已确认账号的余额，不替代登录，不使用模型调用 `sk-` Key。
-- 用户分组优先读取网站返回字段；新模式的出口国家/IP 复用登录前的代理探测，不在汇总阶段重新查询。IP 可点击到 IPPure；动态出口和 IP 定位误差仍可能使检测与实际登录出口不一致。
+- 用户分组优先读取网站返回字段；新模式的出口国家/IP 复用登录前的代理探测，不在汇总阶段重新查询。Telegram 提供原生“复制 IP”按钮；企业微信显示纯 IP，供长按或选中复制，不再跳转 IPPure。
+- 通知末行显示最终汇总生成时间，使用北京时间 UTC+8；不是运行耗时。失败结果也有中文原因和处理建议。
 
 如历史持续不可用，查看 `notify` 中历史 restore/save 步骤的安全状态码，不要发密钥或原始响应。
 
@@ -92,6 +95,8 @@ Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个�
 不要根据“登录成功”推断奖励到账；确认当前余额和历史观测差额。固定基本 profile 不等于完整硬件指纹，Runner、Chromium版本、字体、GPU/IP信誉仍可能变化，也不保证账号完全无关联。
 
 准备失败时，新日志只显示安全字段和数字，例如 `reason=SUBSCRIPTION_HTTP_ERROR status=403`，或 `reason=POOL_TOO_SMALL available=11 requested=12`，不打印订阅、节点、账号或密码。详细原因见配置手册。排障请新建一次 **Run workflow → main**；重跑旧记录会继续使用旧提交。
+
+Actions 日志、错误标注和 Summary 同时给出中文原因与处理办法。例如 Windows 首账号的 `id` 无效时，会说明“1～32 个字符、英文字母开头、仅含字母数字及 `_`/`-`”。`EXIT_DIAGNOSTIC` 区分出口查询 HTTP 错误、超时、无效响应等；随后明确显示换到哪个候选，全部用尽才失败，不在同一个节点反复查询。
 
 登录任务失败时，代理日志也只输出固定阶段码和候选计数。`NATIVE_CHECK_REJECTED` 表示 Xray 拒绝配置，`PORT_READY status=FAIL` 表示本地代理就绪超时；`ISOLATED_DIAGNOSTIC phase=ACCOUNT_RUN` 表示账号执行异常，不再误标为代理启动失败。`link` 和 `random` 仍一起初始化，再按配置顺序登录；此诊断改动不是“失败后才启动备用”的改造。
 

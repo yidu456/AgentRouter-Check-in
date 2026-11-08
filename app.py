@@ -11,6 +11,7 @@ import html
 import json
 import platform
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -264,6 +265,14 @@ def send_telegram(message: str, token: str | None = None, chat_id: str | None = 
             if index:
                 time.sleep(1.1)
             data = {"chat_id": chat_id, "text": chunk, "parse_mode": "HTML"}
+            from account_observations import _canonical_ip
+
+            ips = dict.fromkeys(ip for value in re.findall(r"代理出口 IP：<code>([^<]+)</code>", chunk)
+                                if (ip := _canonical_ip(value)) is not None)
+            if ips:
+                data["reply_markup"] = {"inline_keyboard": [
+                    [{"text": f"复制 {ip}", "copy_text": {"text": ip}}] for ip in ips
+                ]}
             if '<a href="' in chunk:
                 data["link_preview_options"] = {"is_disabled": True}
             response = requests.post(
@@ -369,6 +378,8 @@ def _escape_wecom_markdown(value: str) -> str:
 
 
 def format_notifications(results: list, success_count: int, total: int) -> tuple[str, str]:
+    from routing import failure_help
+
     message_lines = ["🎁 <b>自动签到通知</b>", ""]
     plain_lines = ["🎁 自动签到通知", ""]
     for label, balance, stage in results:
@@ -383,6 +394,8 @@ def format_notifications(results: list, success_count: int, total: int) -> tuple
                 delta = f"{(quota - previous) / 500000:+.2f}$"
             suffix = (f": {status}\n  上次余额：{before}\n  余额变化：{delta}"
                       f"\n  当前余额：{current}")
+            if stage != "SUCCESS":
+                suffix += "\n  " + failure_help(stage)
             history_status = balance.get("history_status")
             if history_status in {"MISSING", "INVALID", "READ_FAILED", "NO_BASELINE"}:
                 suffix += f"\n  历史基线：HISTORY_{history_status}"
@@ -399,9 +412,8 @@ def format_notifications(results: list, success_count: int, total: int) -> tuple
             ip = _canonical_ip(balance.get("exit_ip"))
             html_ip = markdown_ip = "未获取"
             if ip:
-                url = f"https://ippure.com/?ip={quote(ip, safe='')}"
-                html_ip = f'<a href="{html.escape(url, quote=True)}">{ip}</a>'
-                markdown_ip = f"[{ip}]({url})"
+                html_ip = f"<code>{ip}</code>"
+                markdown_ip = ip
             message_lines.append(prefix + html.escape(label) + html.escape(html_suffix)
                                  + f"\n  代理出口 IP：{html_ip}")
             plain_lines.append(prefix + _escape_wecom_markdown(label) + markdown_suffix
@@ -409,6 +421,8 @@ def format_notifications(results: list, success_count: int, total: int) -> tuple
             continue
         elif balance is None:
             suffix = ": 登录成功；当前余额：未获取" if stage == "SUCCESS" else f": 签到失败（{stage}）"
+            if stage != "SUCCESS":
+                suffix += "\n  " + failure_help(stage)
             prefix = "✅ " if stage == "SUCCESS" else "❌ "
         else:
             suffix = f": 余额 {balance}"
@@ -416,8 +430,10 @@ def format_notifications(results: list, success_count: int, total: int) -> tuple
         message_lines.append(prefix + html.escape(label) + html.escape(suffix))
         plain_lines.append(prefix + label + suffix)
     footer = f"📊 成功 {success_count}/{total}"
-    message_lines.extend(["", footer])
-    plain_lines.extend(["", footer])
+    timestamp = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
+    runtime = f"运行时间：{timestamp}（北京时间 UTC+8）"
+    message_lines.extend(["", footer, runtime])
+    plain_lines.extend(["", footer, runtime])
     return "\n".join(message_lines), "\n".join(plain_lines)
 
 
@@ -2088,11 +2104,16 @@ def _safe_login_result(result: dict | None, stage: str) -> tuple:
 def checkin_assigned_account(account: dict, candidates: list[dict], profile: dict,
                              observations: dict | None = None) -> tuple:
     from account_observations import query_exit_ip, query_country, safe_country, safe_timezone
+    from routing import COUNTRY_LOCALES, emit_help, failure_help
 
     last_stage = "PROXY_LIST_EXHAUSTED"
+    tried = 0
     for attempt, candidate in enumerate(candidates, 1):
         if not candidate.get("server"):
             continue
+        tried += 1
+        if attempt > 1:
+            emit_help(f"切换到候选 {attempt}/{len(candidates)}；重新检测出口 IP、国家、时区和自动语言，不沿用上个节点的观测。")
         ip, location = None, None
         try:
             ip = query_exit_ip(candidate)
@@ -2107,8 +2128,11 @@ def checkin_assigned_account(account: dict, candidates: list[dict], profile: dic
         if ip is None or country is None or timezone is None:
             last_stage = "EXIT_IP_FAIL" if ip is None else "TIMEZONE_LOOKUP_FAIL"
             log(f"{account.get('id', 'account')} attempt{attempt}: {last_stage}")
+            emit_help(f"候选 {attempt}/{len(candidates)}：{last_stage}。{failure_help(last_stage)}")
             continue
         effective_profile = dict(profile, timezone_id=timezone)
+        if profile.get("locale") == "auto":
+            effective_profile["locale"] = COUNTRY_LOCALES.get(country["code"], "en-US")
         try:
             result, stage = browser_login_complete(
                 account, proxy=candidate, profile=effective_profile, isolated=True
@@ -2127,6 +2151,8 @@ def checkin_assigned_account(account: dict, candidates: list[dict], profile: dic
                 safe_result["user_group"] = group
             return safe_result, last_stage
         log(f"{account.get('id', 'account')} attempt{attempt}: {last_stage}")
+        emit_help(f"候选 {attempt}/{len(candidates)}：{last_stage}。{failure_help(last_stage)}")
+    emit_help(f"候选用尽：已尝试 {tried} 个节点，最后阶段 {last_stage}。{failure_help(last_stage)}", error=True)
     return None, last_stage
 
 
@@ -2177,6 +2203,7 @@ def run_isolated_group(routes: list[dict], manifest_group: dict, result_path: Pa
                        subscription_url: str = "") -> int:
     from proxy_runtime import download_binary, group_proxy, load_node_links, parse_node_link
     from report import write_report
+    from routing import emit_help, failure_help
 
     by_id = {account["id"]: account for account in routes}
     if set(by_id) != set(manifest_group["account_ids"]) or len(routes) != len(by_id):
@@ -2202,14 +2229,17 @@ def run_isolated_group(routes: list[dict], manifest_group: dict, result_path: Pa
             link = candidate.get("link") or nodes.get(candidate.get("node"))
             if link is None:
                 log(f"{account['id']} candidate{index}: NODE_MISSING")
+                emit_help(f"候选 {index}：NODE_MISSING。{failure_help('NODE_MISSING')}")
                 continue
             try:
                 outbounds[tag] = parse_node_link(link, f"out-{tag}")
                 tags.append(tag)
             except Exception:
                 log(f"{account['id']} candidate{index}: NODE_CONFIG_FAIL")
+                emit_help(f"候选 {index}：NODE_CONFIG_FAIL。{failure_help('NODE_CONFIG_FAIL')}")
         candidate_tags[account["id"]] = tags
     if not outbounds:
+        emit_help(failure_help("PROXY_LIST_EXHAUSTED"), error=True)
         for row in rows:
             row["stage"] = "PROXY_LIST_EXHAUSTED"
         write_report(result_path, manifest_group, rows)
@@ -2243,6 +2273,8 @@ def run_isolated_group(routes: list[dict], manifest_group: dict, result_path: Pa
     except Exception:
         try:
             log(f"ISOLATED_DIAGNOSTIC phase={phase} status=FAIL")
+            emit_help(failure_help("BINARY_DOWNLOAD_FAIL" if phase == "BINARY_DOWNLOAD" else "PROXY_START_FAIL"
+                                  if phase != "ACCOUNT_RUN" else "UNEXPECTED"), error=True)
         except (OSError, ValueError):
             pass
         for row in rows:
@@ -2276,11 +2308,12 @@ def _write_group_failure(group: dict, path: Path, stage: str) -> None:
 
 
 def _log_random_failure(error):
-    from routing import format_diagnostic
+    from routing import format_diagnostic, diagnostic_help, emit_help
 
     try:
         log("RANDOM_POOL_FAIL")
         log(format_diagnostic(getattr(error, "diagnostic", None)).replace("PREPARE_DIAGNOSTIC", "RANDOM_DIAGNOSTIC", 1))
+        emit_help(diagnostic_help(getattr(error, "diagnostic", None)), error=True)
     except (OSError, ValueError):
         pass
 
@@ -2370,10 +2403,14 @@ def main():
             sys.exit(int(count != len(results)))
     except KeyboardInterrupt:
         sys.exit(130)
-    except Exception:
+    except Exception as error:
         log("SCRIPT_FAIL")
+        from routing import diagnostic_help, emit_help, failure_help
+
+        detail = getattr(error, "diagnostic", None)
+        emit_help(diagnostic_help(detail) if detail is not None else failure_help("UNEXPECTED"), error=True)
         if not worker and (raw is None or notification_config is not None):
-            send_notifications("<b>Check-in failed</b>", "Check-in failed", config=notification_config)
+            send_notifications(*format_notifications([("Script", None, "UNEXPECTED")], 0, 1), config=notification_config)
         sys.exit(1)
 
 

@@ -184,14 +184,34 @@ def _proxy_url(proxy):
         return None
 
 
+def _exit_diagnostic(reason, status=None):
+    from routing import emit_help
+
+    causes = {"EXIT_PROXY_INVALID": "代理地址格式不正确", "EXIT_HTTP_ERROR": "出口查询服务返回非成功 HTTP 状态",
+              "EXIT_RESPONSE_TOO_LARGE": "出口查询响应超过 128 字节", "EXIT_RESPONSE_INVALID": "出口查询响应不是有效 IP",
+              "EXIT_TIMEOUT": "经当前代理查询出口 IP 超时", "EXIT_REQUEST_FAIL": "经当前代理建立出口请求失败",
+              "EXIT_READ_FAIL": "出口查询响应读取失败"}
+    if reason not in causes:
+        reason = "EXIT_REQUEST_FAIL"
+    number = f" status={status}" if type(status) is int and 100 <= status <= 599 else ""
+    emit_help(f"EXIT_DIAGNOSTIC reason={reason}{number}。原因：{causes[reason]}。"
+              "处理：跳过当前节点，尝试账号自己的下一候选；若全部失败，检查节点和出口查询服务，不回退直连。")
+
+
 def query_exit_ip(proxy):
     server = _proxy_url(proxy)
     if server is None:
+        _exit_diagnostic("EXIT_PROXY_INVALID")
         return None
     session = response = None
+    phase = "EXIT_REQUEST_FAIL"
+    requests = None
+    timeout_types = ()
     try:
         import requests
+        from urllib3.exceptions import ReadTimeoutError
 
+        timeout_types = (requests.Timeout, ReadTimeoutError)
         session = requests.Session()
         session.trust_env = False
         response = session.get(
@@ -199,14 +219,26 @@ def query_exit_ip(proxy):
             timeout=5, allow_redirects=False, stream=True,
         )
         if response.status_code != 200:
+            _exit_diagnostic("EXIT_HTTP_ERROR", response.status_code)
             return None
+        phase = "EXIT_READ_FAIL"
         body = bytearray()
         for chunk in response.iter_content(chunk_size=MAX_IP_BYTES):
             if len(body) + len(chunk) > MAX_IP_BYTES:
+                _exit_diagnostic("EXIT_RESPONSE_TOO_LARGE")
                 return None
             body.extend(chunk)
-        return _canonical_ip(body.decode("ascii"))
-    except Exception:
+        phase = "EXIT_RESPONSE_INVALID"
+        address = _canonical_ip(body.decode("ascii"))
+        if address is None:
+            _exit_diagnostic(phase)
+        return address
+    except Exception as error:
+        # Requests wraps streaming urllib3 timeouts as ConnectionError.
+        timeout = isinstance(error, timeout_types) or (requests is not None
+            and isinstance(error, requests.ConnectionError)
+            and any(isinstance(cause, timeout_types) for cause in error.args))
+        _exit_diagnostic("EXIT_TIMEOUT" if timeout else phase)
         return None
     finally:
         for resource in (response, session):

@@ -93,7 +93,7 @@ test("mutation rejects wrong Origin media type size shape and verb before DO eff
     assert.equal(f.http.mock.callCount(), 0);
 });
 
-test("authenticated read is private read-only and returns configured identity without Secrets", async (t) => {
+test("authenticated first read schedules enabled target without dispatch or repeated randomization", async (t) => {
     const f = fixture(t);
     const response = await f.call();
     assert.equal(response.status, 200);
@@ -103,9 +103,39 @@ test("authenticated read is private read-only and returns configured identity wi
     assert.equal(response.headers.get("X-Frame-Options"), "DENY");
     assert.equal(response.headers.get("Access-Control-Allow-Origin"), null);
     assert.deepEqual(await response.json(), { status: "OK", targets: [{ id: "github_a", repository: "owner/repo",
-        workflow: "Checkin.yml", ref: "main", enabled: true, token_state: "configured", next_run: null, history: [], error: null }] });
-    assert.equal(f.values.size, 0);
-    assert.equal(f.alarm(), null);
+        workflow: "Checkin.yml", ref: "main", enabled: true, token_state: "configured",
+        next_run: "2026-11-06T18:00:00.000Z", history: [], error: null }] });
+    const plan = structuredClone(f.values.get("plan"));
+    assert.equal(f.alarm(), plan.at);
+    await f.call();
+    assert.deepEqual(f.values.get("plan"), plan);
+    assert.equal(f.http.mock.callCount(), 0);
+});
+
+test("first read does not schedule disabled or missing-token targets", async (t) => {
+    const f = fixture(t);
+    for (const overrides of [{ enabled: false }, { token_secret: "GITHUB_TOKEN_MISSING" }]) {
+        f.env.TRIGGER_CONFIG = config([target(overrides)]);
+        const state = (await (await f.call()).json()).targets[0];
+        assert.equal(state.next_run, null);
+        assert.equal(f.values.size, 0);
+        assert.equal(f.alarm(), null);
+    }
+    assert.equal(f.http.mock.callCount(), 0);
+});
+
+test("initial alarm storage failure can recover without redraw or dispatch", async (t) => {
+    const f = fixture(t);
+    const setAlarm = f.storage.setAlarm;
+    f.storage.setAlarm = async () => { throw new Error("private_alarm_error"); };
+    const failed = (await (await f.call()).json()).targets[0];
+    assert.equal(failed.error, "STORAGE_UNAVAILABLE");
+    const plan = structuredClone(f.values.get("plan"));
+    f.storage.setAlarm = setAlarm;
+    const recovered = (await (await f.call()).json()).targets[0];
+    assert.equal(recovered.next_run, "2026-11-06T18:00:00.000Z");
+    assert.deepEqual(f.values.get("plan"), plan);
+    assert.equal(f.alarm(), plan.at);
     assert.equal(f.http.mock.callCount(), 0);
 });
 
@@ -268,14 +298,14 @@ test("target identity changes ignore old persisted overrides and invalidate acti
     assert.equal(f.values.get("plan").last.result, "TARGET_CHANGED");
 });
 
-test("read returns actual future time without repair and suppresses missing-PAT or elapsed plans", async (t) => {
+test("read retains future plan while rearming missing alarm and suppresses missing-PAT or elapsed plans", async (t) => {
     const f = fixture(t);
     await f.init();
     const before = structuredClone([...f.values]);
     const expected = "2026-11-06T18:00:00.000Z";
     await f.storage.deleteAlarm();
     assert.equal((await (await f.call()).json()).targets[0].next_run, expected);
-    assert.equal(f.alarm(), null);
+    assert.equal(f.alarm(), f.values.get("plan").at);
     assert.deepEqual([...f.values], before);
     f.env.GITHUB_TOKEN_A = "";
     assert.equal((await (await f.call()).json()).targets[0].next_run, null);
@@ -463,8 +493,8 @@ test("distinct manual requests have thirty-second cooldown and twenty-record his
     assert.equal(history.at(-1).id, uuid(2));
     assert.equal((await (await f.call("/github_a/run", { request_id: uuid() })).json()).cached, true);
     assert.equal(f.http.mock.callCount(), 21);
-    assert.equal(f.values.has("plan"), false);
-    assert.equal(f.alarm(), null);
+    assert.equal(f.values.has("plan"), true);
+    assert.equal(f.alarm(), f.values.get("plan").at);
 });
 
 test("valid receipts never evict at capacity and expire after twenty-four hours", async (t) => {

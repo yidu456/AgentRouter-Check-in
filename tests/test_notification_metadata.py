@@ -117,7 +117,7 @@ class UserGroupTests(unittest.TestCase):
 
 
 class LinkedNotificationTests(unittest.TestCase):
-    def test_final_report_pipeline_uses_group_country_links_and_markdown_payload(self):
+    def test_final_report_pipeline_uses_group_country_copy_button_and_markdown_payload(self):
         raw = {"version": 1, "accounts": [{"id": "a01", "username": "dummy@example.test", routing.PASSWORD_KEY: "dummy",
                 "os": "windows", "proxies": [{"link": "socks5://proxy.example:1080"}]}],
                "notifications": {"wecom": {"webhook_url": WEBHOOK}, "telegram": {"bot_token": "dummy", "chat_id": "dummy"}}}
@@ -139,8 +139,9 @@ class LinkedNotificationTests(unittest.TestCase):
                 self.assertEqual(report._notify(root / "missing.json", root), 0)
         country.assert_called_once_with(IP)
         self.assertEqual(post.call_count, 2)
-        self.assertIn('<a href="https://ippure.com/?ip=8.8.8.8">', post.call_args_list[0].kwargs["json"]["text"])
-        self.assertEqual(post.call_args_list[0].kwargs["json"]["link_preview_options"], {"is_disabled": True})
+        self.assertIn('<code>8.8.8.8</code>', post.call_args_list[0].kwargs["json"]["text"])
+        self.assertEqual(post.call_args_list[0].kwargs["json"]["reply_markup"]["inline_keyboard"][0][0]["copy_text"],
+                         {"text": IP})
         payload = post.call_args_list[1].kwargs["json"]
         self.assertEqual(payload["msgtype"], "markdown")
         self.assertIn("用户分组：default", payload["markdown"]["content"])
@@ -155,24 +156,24 @@ class LinkedNotificationTests(unittest.TestCase):
             report.observe_balances(rows, config)
         query.assert_not_called()
 
-    def test_each_channel_gets_clickable_ip_and_escaped_group(self):
+    def test_each_channel_gets_unlinked_ip_and_escaped_group(self):
         rows = [("a01", {"quota": 500000, "previous_quota": 0, "user_group": "vip_[x](link)<b>",
                          "exit_ip": IP, "country": {"name": "美国", "code": "US"}}, "SUCCESS")]
         html, markdown = app.format_notifications(rows, 1, 1)
-        url = f"https://ippure.com/?ip={IP}"
-        self.assertIn(f'<a href="{url}">{IP}</a>', html)
-        self.assertIn(f"[{IP}]({url})", markdown)
+        self.assertIn(f'<code>{IP}</code>', html)
+        self.assertIn(f"代理出口 IP：{IP}", markdown)
+        self.assertNotIn("ippure", html + markdown)
         self.assertIn("美国（US）", html)
         self.assertIn("用户分组", markdown)
         self.assertIn("&lt;b&gt;", html)
         self.assertNotIn("vip_[x](link)", markdown)
         self.assertIn("vip\\_\\[x\\]\\(link\\)", markdown)
 
-    def test_ipv6_links_and_unknown_values(self):
+    def test_ipv6_unlinked_text_and_unknown_values(self):
         html, markdown = app.format_notifications([
             ("a01", {"quota": 1, "exit_ip": "2001:4860:4860::8888"}, "SUCCESS"),
             ("a02", {"quota": None}, "FORM_NOT_FOUND")], 1, 2)
-        self.assertIn("?ip=2001%3A4860%3A4860%3A%3A8888", html)
+        self.assertIn("<code>2001:4860:4860::8888</code>", html)
         self.assertIn("出口国家：未获取", markdown)
         self.assertIn("用户分组：未获取", markdown)
         self.assertIn("FORM_NOT_FOUND", markdown)
@@ -188,13 +189,13 @@ class LinkedNotificationTests(unittest.TestCase):
             app.send_notifications("html", "markdown", {"wecom": {"webhook_url": WEBHOOK}}, wecom_markdown=True)
         send.assert_called_once_with("markdown", WEBHOOK, markdown=True)
 
-    def test_generated_long_summaries_never_split_link_syntax(self):
+    def test_generated_long_summaries_keep_copyable_ip_code_intact(self):
         rows = [(f"a{i}", {"quota": 1, "exit_ip": IP, "user_group": "default"}, "SUCCESS") for i in range(50)]
         html, markdown = app.format_notifications(rows, 50, 50)
         for chunk in app.split_utf8_text(html, limit=3500):
-            self.assertEqual(chunk.count("<a "), chunk.count("</a>"))
+            self.assertEqual(chunk.count("<code>"), chunk.count("</code>"))
         for chunk in app.split_utf8_text(markdown):
-            self.assertEqual(chunk.count(f"[{IP}]("), chunk.count(f"?ip={IP})"))
+            self.assertNotIn("ippure", chunk)
 
 
 if __name__ == "__main__":

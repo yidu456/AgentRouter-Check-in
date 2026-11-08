@@ -93,8 +93,19 @@ export class TriggerSchedule {
                 catch { return adminJson({ status: "CONFIG_INVALID" }, 503); }
                 if (!target) return adminJson({ status: "TARGET_NOT_FOUND" }, 404);
                 try {
-                    const state = await this.snapshot();
-                    if (listing) return adminJson(this.describe(target, state));
+                    let state = await this.snapshot();
+                    if (listing) {
+                        if (!state.plan && this.enabled(target, state.control) && tokenFor(target, this.env)) {
+                            await this.initialize(target);
+                            state = await this.snapshot();
+                        } else if (state.plan && this.enabled(target, state.control) && tokenFor(target, this.env)
+                                && state.plan.id === target.id && state.plan.binding === targetBinding(target)
+                                && !state.plan.attempted && state.plan.at > Date.now()
+                                && await this.ctx.storage.getAlarm() === null) {
+                            await this.ctx.storage.setAlarm(state.plan.at);
+                        }
+                        return adminJson(this.describe(target, state));
+                    }
                     return await this.mutate(target, state, action, body);
                 } catch (error) {
                     const code = error?.message === "STATE_INVALID" ? "STATE_INVALID" : "STORAGE_UNAVAILABLE";

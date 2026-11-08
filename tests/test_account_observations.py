@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+from requests import Timeout, ConnectionError
 
 import account_observations as observations
 
@@ -220,7 +221,8 @@ class ExitIPTests(unittest.TestCase):
         session.get.return_value = response
         if error:
             session.get.side_effect = error
-        with mock.patch.dict(sys.modules, {"requests": SimpleNamespace(Session=lambda: session)}):
+        with mock.patch.dict(sys.modules, {"requests": SimpleNamespace(
+                Session=lambda: session, Timeout=Timeout, ConnectionError=ConnectionError)}):
             result = observations.query_exit_ip(proxy)
         return result, session, response
 
@@ -267,7 +269,8 @@ class ExitIPTests(unittest.TestCase):
             {"server": "http://local\nhost:80"},
         ]
         session_factory = mock.Mock(side_effect=AssertionError("unexpected network session"))
-        with mock.patch.dict(sys.modules, {"requests": SimpleNamespace(Session=session_factory)}):
+        with mock.patch.dict(sys.modules, {"requests": SimpleNamespace(
+                Session=session_factory, Timeout=Timeout, ConnectionError=ConnectionError)}):
             for proxy in invalid:
                 with self.subTest(proxy=proxy):
                     self.assertIsNone(observations.query_exit_ip(proxy))
@@ -309,7 +312,9 @@ class ExitIPTests(unittest.TestCase):
         self.assertIsNone(result)
         session.get.assert_called_once()
         session.close.assert_called_once()
-        output.assert_not_called()
+        text = " ".join(str(call.args[0]) for call in output.call_args_list)
+        self.assertIn("EXIT_REQUEST_FAIL", text)
+        self.assertNotIn("credential-error", text)
 
     def test_module_import_and_history_do_not_require_requests(self):
         code = (
@@ -325,7 +330,8 @@ class ExitIPTests(unittest.TestCase):
             capture_output=True, text=True, timeout=10,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout, "")
+        self.assertIn("EXIT_DIAGNOSTIC reason=EXIT_REQUEST_FAIL", completed.stdout)
+        self.assertNotIn("blocked", completed.stdout)
 
 
 if __name__ == "__main__":

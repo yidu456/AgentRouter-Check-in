@@ -55,6 +55,7 @@ DIAGNOSTIC_FIELDS = set("""config version subscription_url notifications telegra
     user_id manifest mode random_plan""".split())
 DIAGNOSTIC_NUMBERS = ("status", "line", "column", "total", "valid", "rejected", "duplicate", "distinct",
                       "excluded", "available", "requested", "account_index", "proxy_index")
+COUNTRY_LOCALES = {"SG": "en-SG", "KR": "ko-KR", "JP": "ja-JP", "DE": "de-DE", "US": "en-US", "HK": "zh-HK"}
 
 
 def format_diagnostic(value):
@@ -78,6 +79,127 @@ def _fail(reason="INVALID", field="config", **numbers):
     error = ValueError("ROUTE_CONFIG_FAIL")
     error.diagnostic = {"field": field, "reason": reason, **numbers}
     raise error
+
+
+def diagnostic_help(value):
+    # Reuse the machine formatter's allowlist; never render raw fields or values.
+    diagnostic = format_diagnostic(value)
+    safe = dict(part.split("=", 1) for part in diagnostic.split()[1:])
+    field, reason = safe["field"], safe["reason"]
+    systems = {"ubuntu": "Ubuntu", "windows": "Windows", "macos": "macOS"}
+    location = re.sub(r"^groups\.(ubuntu|windows|macos)\.accounts\[(\d+)\]",
+                      lambda m: f"{systems[m[1]]} 组第 {int(m[2]) + 1} 个账号", field)
+    location = re.sub(r"proxies\[(\d+)\]", lambda m: f"第 {int(m[1]) + 1} 个代理", location)
+    choices = {
+        "id": ("账号 id 格式不正确", "使用 1～32 个字符，英文字母开头，仅含字母、数字、_、-，例如 win01；所有账号 id 不重复"),
+        "version": ("配置版本不支持", "使用 version: 2 配合 groups，或 version: 1 配合 accounts"),
+        "locale": ("浏览器语言不支持", "使用 auto 自动跟随出口国家，或固定 zh-CN / en-US"),
+        "os": ("系统名称不支持", "仅使用 ubuntu、windows、macos"),
+        "device_scale_factor": ("缩放比例不支持", "使用整数 1 或 2"),
+        "color_scheme": ("颜色模式不支持", "使用 light 或 dark"),
+        "timezone_id": ("兼容时区值不支持", "省略 timezone_id，登录前按出口 IP 自动检测时区"),
+    }
+    messages = {
+        "NONEMPTY_STRING": ("字段为空或不是字符串", "填写非空字符串；账号密码必须填写，且不要复制脱敏占位值"),
+        "URL_INVALID": ("链接格式不符合字段要求", "站点/订阅/webhook 使用完整 HTTPS 地址；代理 link 使用受支持的节点链接"),
+        "FIELDS_INVALID": ("字段缺失、多余或结构不正确", "对照配置手册检查字段名和层级；每个代理只填写 link、node、random 中的一种"),
+        "JSON_INVALID": ("JSON 语法错误", "按诊断中的行号和列号检查引号、逗号、括号；不要加 Markdown 代码围栏"),
+        "JSON_DUPLICATE_KEY": ("JSON 存在重复字段", "删除同一对象内的重复键，不要让后一个值覆盖前一个值"),
+        "JSON_NONFINITE": ("JSON 含非标准数字", "删除 NaN / Infinity，改用有限数字"),
+        "CONFIG_REQUIRED": ("没有有效的新模式配置", "在 Actions Secret CHECKIN_CONFIG 中保存完整 JSON"),
+        "CONFIG_TOO_LARGE": ("配置超过 48 KiB", "减少配置内容，单个 CHECKIN_CONFIG 不超过 48 KiB"),
+        "DUPLICATE_ID": ("账号 id 重复", "给每个账号设置唯一 id，不要随意修改已有历史账号的 id"),
+        "DUPLICATE_LOGIN": ("同一站点的同一账号配置了多次", "每个真实账号只保留一项，不要同时放进多个系统组"),
+        "DUPLICATE_PROXY": ("固定代理配置重复", "删除重复代理，或为账号选择不同的固定节点"),
+        "OS_INHERITED_FROM_GROUP": ("账号重复设置了 os", "version: 2 的系统由外层组决定，删除账号内的 os"),
+        "INTEGER_REQUIRED": ("字段必须是整数", "使用整数，不要使用小数、字符串或 true/false"),
+        "INTEGER_RANGE": ("整数超出允许范围", "random 使用正整数；检查视口/屏幕尺寸和候选数量的配置范围"),
+        "SCREEN_SMALLER_THAN_VIEWPORT": ("屏幕尺寸小于浏览器视口", "让 screen 的宽和高分别不小于 viewport"),
+        "SUBSCRIPTION_REQUIRED": ("node/random 需要订阅，但未配置", "填写 subscription_url，或只使用固定 link"),
+        "SUBSCRIPTION_HTTP_ERROR": ("订阅服务返回非成功 HTTP 状态", "按状态码检查订阅地址、授权、限流和服务可用性"),
+        "SUBSCRIPTION_TIMEOUT": ("订阅请求或读取超时", "检查订阅服务是否可达；服务恢复后新建 main 工作流运行"),
+        "SUBSCRIPTION_REQUEST_FAIL": ("无法建立订阅请求", "检查订阅地址、DNS、网络和服务可用性"),
+        "SUBSCRIPTION_READ_FAIL": ("订阅响应读取失败", "检查订阅服务是否返回完整内容；不要上传原始订阅排障"),
+        "SUBSCRIPTION_CLOSE_FAIL": ("订阅响应关闭失败", "检查运行依赖和响应读取过程，新建运行，不复用异常响应"),
+        "SUBSCRIPTION_TOO_LARGE": ("订阅响应过大", "减少订阅节点或使用精简订阅导出"),
+        "SUBSCRIPTION_FORMAT_INVALID": ("订阅格式不支持或内容损坏", "使用支持的链接列表、Base64 或 Clash/Sub-Store 导出格式"),
+        "SUBSCRIPTION_NO_VALID_NODES": ("订阅没有可解析的有效节点", "检查导出格式和节点参数；查看 total / rejected 计数"),
+        "SUBSCRIPTION_DUPLICATE_NODE_NAME": ("按 node 指定的订阅名称重复", "使用唯一节点名称，或改用 link / random"),
+        "POOL_TOO_SMALL": ("排除固定节点后随机池容量不足", "减少 random 数量或增加不同的有效节点，不能重复借用其他账号的节点"),
+        "POOL_INVALID": ("节点池结构未通过校验", "检查订阅导出格式和本轮快照，不修改内部节点池来绕过校验"),
+        "POOL_PLAN_FAIL": ("随机计划生成失败", "检查有效节点和 random 数量；新建 main 运行，不替换随机计划"),
+        "FIXED_LINK_INVALID": ("固定 link 节点无法解析", "重新导出客户端可用的完整节点链接，检查协议和参数"),
+        "FIXED_NODE_MISSING": ("指定 node 在订阅中找不到", "核对节点名称；名称经常变化时改用 random"),
+        "FIXED_NODE_DUPLICATE": ("多个固定配置指向同一节点", "选择不同的固定节点，保留账号代理隔离"),
+        "RANDOM_PLAN_MISMATCH": ("随机计划与本轮配置或节点池不一致", "确认各阶段配置不变，更新代码后新建 main 运行，不重跑旧提交"),
+        "RANDOM_PLAN_INVALID": ("随机计划缺失或格式不正确", "使用最新完整工作流并新建 main 运行，不手动编辑 RANDOM_PLAN"),
+        "SNAPSHOT_MISSING": ("本轮加密节点池快照缺失或已过期", "新建 main 工作流；快照仅保留 1 天，不能重建旧随机计划"),
+        "SNAPSHOT_CONTEXT_INVALID": ("缺少本轮 Actions 仓库/运行/提交上下文", "使用完整的最新工作流，不要单独复制 worker 环境运行"),
+        "SNAPSHOT_PLAN_MISMATCH": ("快照与本轮随机计划不匹配", "保持本轮配置不变，新建 main 运行，不能替换或跳过快照校验"),
+        "SNAPSHOT_INVALID": ("加密快照校验失败", "确认各阶段 CHECKIN_CONFIG 相同；不要修改快照，新建 main 运行"),
+        "SNAPSHOT_READ_FAIL": ("快照文件无法读取", "检查 artifact 下载和文件权限，新建 main 运行"),
+        "SNAPSHOT_WRITE_FAIL": ("快照文件保存失败", "检查 runner 临时目录权限和空间，不覆盖已有快照"),
+        "SNAPSHOT_TOO_LARGE": ("快照超过安全大小限制", "减少订阅节点数量，不关闭大小校验"),
+        "MANIFEST_WRITE_FAIL": ("路由清单写入失败", "检查 runner 临时目录权限和空间"),
+    }
+    cause, remedy = (choices.get(field.rsplit(".", 1)[-1], ("字段值不在允许范围", "对照配置手册填写受支持的值"))
+                     if reason == "INVALID_CHOICE" else messages.get(reason,
+                     ("配置或准备阶段未通过校验", "结合安全诊断码检查配置手册；新建 main 运行，不要绕过校验")))
+    return f"配置位置：{location}。原因：{cause}。处理：{remedy}。【{diagnostic}】"
+
+
+def failure_help(stage):
+    messages = {
+        "EXIT_IP_FAIL": ("当前代理未能返回有效出口 IP，尚未登录", "检查节点及出口查询服务；将按顺序尝试剩余自有节点，若已用尽请补充可用节点"),
+        "TIMEZONE_LOOKUP_FAIL": ("出口 IP 的国家或有效时区查询失败，尚未登录", "检查定位服务可用性；跳过该节点，不用默认时区或直连兜底"),
+        "FORM_NOT_FOUND": ("未找到可见的邮箱登录表单", "检查网站入口、WAF 验证和页面改版，不能据此断定密码错误"),
+        "FORM_OPERATE_TIMEOUT": ("登录表单操作超时", "检查表单控件和网站响应；这不是已确认的密码错误"),
+        "WAF_TIMEOUT": ("网站安全验证未在期限内完成", "更换可用节点，检查验证页；不能绕过网站校验"),
+        "GOTO_TIMEOUT": ("打开登录页超时", "检查代理到站点的连通性及站点服务"),
+        "PAGE_TIMEOUT": ("登录后的页面等待超时", "检查站点响应和代理稳定性"),
+        "BROWSER_LAUNCH_FAIL": ("浏览器启动失败", "检查 Playwright Chromium 安装及 runner 系统依赖"),
+        "USER_API_FAIL": ("无法取得登录态用户信息", "检查站点用户接口、登录状态和代理响应"),
+        "API_PAYLOAD_FAIL": ("用户接口返回格式不符合要求", "检查站点是否改版，不要把原始用户响应上传排障"),
+        "LOGIN_UNVERIFIED": ("没有取得足够证据证明登录成功", "核对登录态用户接口和表单适配，不把脚本结束当作成功"),
+        "AUTH_IDENTITY_MISMATCH": ("登录身份与配置账号不一致", "核对账号和 API 配置，不能复用其他账号的登录态"),
+        "QUOTA_INVALID": ("返回的余额格式不合法", "检查站点余额字段和单位，不能把无效余额计作成功"),
+        "NODE_MISSING": ("指定节点不存在", "检查订阅名称或固定 link，使用有效的账号自有候选"),
+        "NODE_CONFIG_FAIL": ("节点参数无法解析", "重新导出可用节点链接，检查协议、UUID 和传输参数"),
+        "NODE_UNREACHABLE": ("节点连通性检查失败", "更换账号自有候选节点，检查服务器和端口"),
+        "PROXY_LIST_EXHAUSTED": ("账号没有剩余可用候选", "检查每个候选的前序错误，补充有效节点，不回退直连"),
+        "NO_PROXY": ("没有可用代理", "检查代理配置和候选节点"),
+        "PROXY_START_FAIL": ("本地代理初始化失败", "查看同一步 BINARY_DOWNLOAD / NATIVE_CHECK / PORT_READY 诊断，检查下载、配置和端口"),
+        "BINARY_DOWNLOAD_FAIL": ("Xray 下载或完整性校验失败，尚未尝试账号登录", "查看下载 HTTP 状态/重试/哈希诊断；服务恢复后新建运行，不关闭哈希校验"),
+        "JOB_MISSING": ("执行组未上传结果报告", "查看该系统任务是否失败或被取消"),
+        "REPORT_INVALID": ("结果报告缺失、损坏或不符合本轮账号分配", "检查 artifact 上传/下载和各任务日志，不伪造成功结果"),
+        "PREPARE_FAIL": ("准备任务失败，登录组可能尚未执行", "打开 prepare 步骤的字段位置、原因和处理建议，修复后新建 main 运行"),
+        "ROUTE_CONFIG_FAIL": ("配置或账号路由校验失败", "查看 PREPARE_DIAGNOSTIC 的字段位置和中文建议，核对各阶段配置相同"),
+        "RANDOM_POOL_FAIL": ("随机节点池或加密快照校验失败", "查看 RANDOM_DIAGNOSTIC 的具体原因，保持配置不变并新建 main 运行"),
+        "UNFINISHED": ("账号执行未完成", "检查任务取消、runner 异常或代理初始化阶段日志"),
+        "UNEXPECTED": ("账号执行发生未分类异常", "查看安全阶段诊断，检查运行依赖和站点变化，不提交凭据或原始响应"),
+        "UNKNOWN": ("没有取得可靠执行结果", "检查该任务的前序日志和结果报告"),
+    }
+    cause, remedy = messages.get(stage, ("执行未通过校验", "检查安全诊断和配置，不绕过失败检查"))
+    return f"原因：{cause}。处理：{remedy}。"
+
+
+def emit_help(message, *, error=False):
+    actions = os.environ.get("GITHUB_ACTIONS") == "true"
+    try:
+        print(message, flush=True)
+        if actions and error:
+            escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+            print(f"::error title=签到运行失败::{escaped}", flush=True)
+    except (OSError, ValueError):
+        pass
+    if actions:
+        path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if path:
+            try:
+                with open(path, "a", encoding="utf-8") as stream:
+                    stream.write("\n- " + message.replace("\n", " ") + "\n")
+            except (OSError, ValueError):
+                pass
 
 
 def _at(field, function, *args):
@@ -211,7 +333,7 @@ def _profile(value):
     scheme = value.get("color_scheme", "light")
     if type(scale) is not int or scale not in {1, 2}:
         _fail("INVALID_CHOICE", "device_scale_factor")
-    if not isinstance(locale, str) or locale not in {"zh-CN", "en-US"}:
+    if not isinstance(locale, str) or locale not in {"zh-CN", "en-US", "auto"}:
         _fail("INVALID_CHOICE", "locale")
     if not isinstance(timezone, str) or timezone not in {
         "Asia/Shanghai",
@@ -644,6 +766,7 @@ def main(argv=None):
         print("ROUTE_CONFIG_FAIL", file=sys.stderr)
         if args.command == "prepare":
             print(format_diagnostic(getattr(error, "diagnostic", None)), file=sys.stderr)
+        emit_help(diagnostic_help(getattr(error, "diagnostic", None)), error=True)
         return 1
 
 

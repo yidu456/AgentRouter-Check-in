@@ -360,6 +360,9 @@ class NotifyCliTests(unittest.TestCase):
             parse_config=routing.parse_config,
             build_manifest=routing.build_manifest,
             RUNNERS=routing.RUNNERS,
+            emit_help=routing.emit_help,
+            failure_help=routing.failure_help,
+            diagnostic_help=routing.diagnostic_help,
         )
 
     def run_notify(self, public_manifest, report_value=None, env=None):
