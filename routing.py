@@ -46,7 +46,9 @@ DIAGNOSTIC_REASONS = set("""INVALID FIELDS_INVALID NONEMPTY_STRING URL_INVALID I
     SUBSCRIPTION_READ_FAIL SUBSCRIPTION_TOO_LARGE SUBSCRIPTION_FORMAT_INVALID SUBSCRIPTION_NO_VALID_NODES
     SUBSCRIPTION_DUPLICATE_NODE_NAME SUBSCRIPTION_CLOSE_FAIL POOL_INVALID POOL_STATS POOL_CAPACITY_STATS
     POOL_TOO_SMALL FIXED_LINK_INVALID FIXED_NODE_DUPLICATE FIXED_NODE_MISSING POOL_PLAN_FAIL
-    MANIFEST_WRITE_FAIL SUBSCRIPTION_TIMEOUT RANDOM_PLAN_INVALID RANDOM_PLAN_MISMATCH""".split())
+    MANIFEST_WRITE_FAIL SUBSCRIPTION_TIMEOUT RANDOM_PLAN_INVALID RANDOM_PLAN_MISMATCH
+    SNAPSHOT_MISSING SNAPSHOT_READ_FAIL SNAPSHOT_WRITE_FAIL SNAPSHOT_INVALID SNAPSHOT_TOO_LARGE
+    SNAPSHOT_CONTEXT_INVALID SNAPSHOT_PLAN_MISMATCH""".split())
 DIAGNOSTIC_FIELDS = set("""config version subscription_url notifications telegram wecom bot_token chat_id
     webhook_url groups ubuntu macos windows accounts id username password os site proxies link node random
     profile viewport screen width height device_scale_factor locale timezone_id color_scheme api access_token
@@ -570,6 +572,17 @@ def _prepare(manifest_path):
         path.write_text(json.dumps(manifest, ensure_ascii=True, separators=(",", ":")), encoding="utf-8")
     except OSError:
         _fail("MANIFEST_WRITE_FAIL", "manifest")
+    if "random" in manifest:
+        from random_snapshot import SNAPSHOT_NAME, write_snapshot
+
+        write_snapshot(path.with_name(SNAPSHOT_NAME), config, manifest["random"], names, nodes)
+        if os.environ.get("GITHUB_ENV"):
+            try:
+                with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
+                    stream.write("RANDOM_SNAPSHOT_READY=true\n")
+            except OSError:
+                _fail("SNAPSHOT_WRITE_FAIL", "random_plan")
+        print("PREPARE_SNAPSHOT_READY")
     print("MANIFEST_READY")
 
 
@@ -601,7 +614,10 @@ def _assign(manifest_path, slot, runner):
     values = {"GROUP_ID": group["group_id"], "CHECKIN_MODE": group["mode"], "RUNNER_KEY": runner,
               "ACCOUNT_IDS": json.dumps(group["account_ids"], ensure_ascii=True, separators=(",", ":"))}
     if "random" in manifest:
+        from random_snapshot import SNAPSHOT_NAME
+
         values["RANDOM_PLAN"] = json.dumps(manifest["random"], separators=(",", ":"))
+        values["RANDOM_SNAPSHOT_PATH"] = str(Path(manifest_path).resolve().with_name(SNAPSHOT_NAME))
     with open(output_path, "a", encoding="utf-8") as stream:
         stream.write("".join(f"{key}={value}\n" for key, value in values.items()))
 

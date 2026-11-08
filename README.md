@@ -44,6 +44,8 @@ GitHub Actions 使用 Playwright Chromium 和 Xray 代理登录完成签到；�
 
 不用的 OS 组或通知渠道可以删除。每组可放多个账号，每个账号必须有自己的 1～N 个代理，首次成功后停止尝试；不回退免费节点或直连。`version:1` 的顶层 `accounts` + 每账号 `os` 格式仍兼容。
 
+有 `random` 时，prepare 每轮只获取一次订阅，所有系统使用同一份加密节点池快照，不再重新下载订阅。无需新增 JSON 字段或 Secret；下一轮重新下载、重新抽取。快照只以密文保存为保留 1 天的 Actions artifact，配置或快照校验失败仍不登录。
+
 每个候选节点登录前，先通过该代理检测出口 IP，再查询国家和具体 IANA 时区，用检测到的时区创建浏览器。无需填写 `profile.timezone_id`；换节点会重新检测。IP 或时区查询失败就跳过该节点，所有候选失败则不登录，不用默认时区或直连兜底。
 
 完整字段、订阅随机节点、协议链接、固定 profile 和可选网站管理 API 凭据见 **[配置手册](docs/configuration.md)**。不要填写 Clash YAML、Xray 内核配置，也不要把真实凭据提交到仓库。
@@ -93,7 +95,7 @@ Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个�
 
 登录任务失败时，代理日志也只输出固定阶段码和候选计数。`NATIVE_CHECK_REJECTED` 表示 Xray 拒绝配置，`PORT_READY status=FAIL` 表示本地代理就绪超时；`ISOLATED_DIAGNOSTIC phase=ACCOUNT_RUN` 表示账号执行异常，不再误标为代理启动失败。`link` 和 `random` 仍一起初始化，再按配置顺序登录；此诊断改动不是“失败后才启动备用”的改造。
 
-`RANDOM_POOL_FAIL` 后看 `RANDOM_DIAGNOSTIC`：`SUBSCRIPTION_HTTP_ERROR status=403` 是订阅 HTTP 错误，`SUBSCRIPTION_TIMEOUT` 是可识别的请求/读取超时，`RANDOM_PLAN_MISMATCH` 是配置或有效节点与准备阶段不一致，并不等于浏览器指纹异常。Xray 下载另给 `BINARY_HTTP_ERROR`、`BINARY_TIMEOUT` 等原因；仅 HTTP 502/503/504 或明确超时最多尝试 3 次，重试前分别等待 2/4 秒，仍校验固定版本 SHA-256。不打印 URL、密钥或响应，也不自动重新抽取来绕过校验。
+`RANDOM_POOL_FAIL` 后看 `RANDOM_DIAGNOSTIC`：`SNAPSHOT_MISSING` 表示加密池工件缺失，`SNAPSHOT_INVALID` 表示损坏或配置/运行绑定不匹配，`RANDOM_PLAN_MISMATCH` 表示计划与有效节点不一致；这些都不是浏览器指纹异常。订阅 HTTP/超时诊断现在在 prepare 或本地运行中出现，worker 不再请求订阅。Xray 下载仅 HTTP 502/503/504 或明确超时最多尝试 3 次，重试前分别等待 2/4 秒，仍校验固定版本 SHA-256，不换镜像或绕过校验。
 
 VLESS + WS + 普通 TLS 自动移除 `fp`、`ech` 后复用原解析器，保留 TLS/SNI/Host/路径/已有 Early Data；移除 ECH 会失去隐藏 TLS 服务名的保护。XHTTP 仍跳过，不转换成 WS；完整限制见配置手册第 6.1 节。
 

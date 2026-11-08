@@ -10,6 +10,8 @@ import app
 import proxy_runtime
 import routing
 import subscription_pool
+import random_snapshot
+from nacl.secret import SecretBox
 
 
 PRIVATE = "private-worker-marker"
@@ -43,7 +45,7 @@ class RandomWorkerDiagnosticsTests(unittest.TestCase):
         for forbidden in (PRIVATE, "secret.example", "Traceback", "fingerprint=", "seed="):
             self.assertNotIn(forbidden, output)
 
-    def run_worker(self, response=None, error=None, plan=None, config=None, output=None):
+    def run_worker(self, nodes=None, issue=None, plan=None, config=None, output=None):
         value = self.config() if config is None else config
         if plan is None:
             plan = subscription_pool.make_plan(routing.parse_config(json.dumps(self.config())), {}, self.nodes(), seed="a" * 32)
@@ -51,40 +53,40 @@ class RandomWorkerDiagnosticsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, \
                 patch.dict(app.os.environ, {"CHECKIN_CONFIG": json.dumps(value), "CHECKIN_MODE": "isolated",
                     "GROUP_ID": "g01", "RUNNER_KEY": "ubuntu-24.04", "ACCOUNT_IDS": '["a01"]',
+                    "RANDOM_SNAPSHOT_PATH": str(Path(directory) / random_snapshot.SNAPSHOT_NAME),
                     "RANDOM_PLAN": json.dumps(plan), "RESULT_PATH": str(Path(directory) / "result.json")}, clear=True), \
                 patch.object(app.platform, "system", return_value="Linux"), \
-                patch.object(proxy_runtime.requests, "get", return_value=response or self.response(), side_effect=error), \
+                patch.object(proxy_runtime.requests, "get", side_effect=AssertionError("refetch forbidden")) as get, \
                 patch.object(app, "run_isolated_group", return_value=0) as run, \
                 contextlib.redirect_stdout(output):
+            snapshot = Path(directory) / random_snapshot.SNAPSHOT_NAME
+            if issue == "corrupt":
+                snapshot.write_bytes(b"corrupted")
+            elif issue != "missing":
+                payload = {"version": 1, "plan": plan, "named_links": {},
+                           "nodes": self.nodes() if nodes is None else nodes}
+                snapshot.write_bytes(SecretBox(random_snapshot._key(routing.parse_config(json.dumps(value))))
+                                     .encrypt(json.dumps(payload).encode()))
             with self.assertRaises(SystemExit) as exited:
                 app.main()
             path = Path(directory) / "result.json"
             report = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+            get.assert_not_called()
         return exited.exception.code, output, report, run.call_count
 
-    def test_worker_distinguishes_request_http_timeout_and_read_failure(self):
-        for case, reason in [("request", "SUBSCRIPTION_REQUEST_FAIL"), ("http", "SUBSCRIPTION_HTTP_ERROR"),
-                             ("timeout", "SUBSCRIPTION_TIMEOUT"), ("read", "SUBSCRIPTION_READ_FAIL")]:
-            response = self.response()
-            error = RuntimeError(PRIVATE) if case == "request" else None
-            if case == "http":
-                response.status_code = 403
-                response.raise_for_status.side_effect = proxy_runtime.requests.HTTPError(PRIVATE)
-            elif case == "timeout":
-                error = proxy_runtime.requests.Timeout(PRIVATE)
-            elif case == "read":
-                response.iter_content.side_effect = RuntimeError(PRIVATE)
+    def test_worker_distinguishes_missing_and_corrupt_snapshot_without_refetch(self):
+        for case, reason in [("missing", "SNAPSHOT_MISSING"), ("corrupt", "SNAPSHOT_INVALID")]:
             with self.subTest(case=case):
-                code, output, report, calls = self.run_worker(response, error)
+                code, output, report, calls = self.run_worker(issue=case)
                 self.assertEqual((code, calls), (1, 0))
                 self.assertEqual(report["results"], [{"id": "a01", "quota": None, "stage": "RANDOM_POOL_FAIL"}])
-                self.assertIn(f"RANDOM_DIAGNOSTIC field=subscription_url reason={reason}", output.getvalue())
-                if case == "http":
-                    self.assertIn("status=403", output.getvalue())
+                self.assertIn(f"RANDOM_DIAGNOSTIC field=random_plan reason={reason}", output.getvalue())
                 self.assert_private(output.getvalue())
 
     def test_changed_pool_rejects_plan_with_specific_integrity_reason(self):
-        code, output, report, calls = self.run_worker(self.response(b"socks5://changed.example.test:1080\nsocks5://random2.example.test:1080"))
+        nodes = self.nodes()
+        nodes[0]["server"] = "changed.example.test"
+        code, output, report, calls = self.run_worker(nodes=nodes)
         self.assertEqual((code, calls), (1, 0))
         self.assertEqual(report["results"][0]["stage"], "RANDOM_POOL_FAIL")
         self.assertIn("RANDOM_DIAGNOSTIC field=random_plan reason=RANDOM_PLAN_MISMATCH", output.getvalue())
@@ -114,26 +116,37 @@ class RandomWorkerDiagnosticsTests(unittest.TestCase):
     def test_closed_stdout_still_writes_random_failure_report(self):
         output = MagicMock()
         output.write.side_effect = BrokenPipeError(PRIVATE)
-        code, _, report, calls = self.run_worker(error=RuntimeError(PRIVATE), output=output)
+        code, _, report, calls = self.run_worker(issue="corrupt", output=output)
         self.assertEqual((code, calls), (1, 0))
         self.assertEqual(report["results"][0]["stage"], "RANDOM_POOL_FAIL")
 
     def test_local_run_also_prints_safe_random_reason(self):
-        output = io.StringIO()
-        with tempfile.TemporaryDirectory() as directory, \
-                patch.dict(app.os.environ, {"CHECKIN_CONFIG": json.dumps(self.config()),
-                    "BALANCE_HISTORY_PATH": str(Path(directory) / "history.json")}, clear=True), \
-                patch.object(app.platform, "system", return_value="Linux"), \
-                patch.object(proxy_runtime.requests, "get", side_effect=RuntimeError(PRIVATE)), \
-                patch.object(app, "run_isolated_group") as run, \
-                patch.object(app, "send_notifications", return_value=None), \
-                contextlib.redirect_stdout(output):
-            with self.assertRaises(SystemExit) as exited:
-                app.main()
-            self.assertEqual(exited.exception.code, 1)
-            run.assert_not_called()
-        self.assertIn("RANDOM_DIAGNOSTIC field=subscription_url reason=SUBSCRIPTION_REQUEST_FAIL", output.getvalue())
-        self.assert_private(output.getvalue())
+        for case, reason in [("request", "SUBSCRIPTION_REQUEST_FAIL"), ("http", "SUBSCRIPTION_HTTP_ERROR"),
+                             ("timeout", "SUBSCRIPTION_TIMEOUT"), ("read", "SUBSCRIPTION_READ_FAIL")]:
+            response = self.response()
+            error = RuntimeError(PRIVATE) if case == "request" else None
+            if case == "http":
+                response.status_code = 403
+                response.raise_for_status.side_effect = proxy_runtime.requests.HTTPError(PRIVATE)
+            elif case == "timeout":
+                error = proxy_runtime.requests.Timeout(PRIVATE)
+            elif case == "read":
+                response.iter_content.side_effect = RuntimeError(PRIVATE)
+            output = io.StringIO()
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory, \
+                    patch.dict(app.os.environ, {"CHECKIN_CONFIG": json.dumps(self.config()),
+                        "BALANCE_HISTORY_PATH": str(Path(directory) / "history.json")}, clear=True), \
+                    patch.object(app.platform, "system", return_value="Linux"), \
+                    patch.object(proxy_runtime.requests, "get", return_value=response, side_effect=error), \
+                    patch.object(app, "run_isolated_group") as run, \
+                    patch.object(app, "send_notifications", return_value=None), \
+                    contextlib.redirect_stdout(output):
+                with self.assertRaises(SystemExit) as exited:
+                    app.main()
+                self.assertEqual(exited.exception.code, 1)
+                run.assert_not_called()
+            self.assertIn(f"RANDOM_DIAGNOSTIC field=subscription_url reason={reason}", output.getvalue())
+            self.assert_private(output.getvalue())
 
     def test_binary_download_subcauses_are_safe_and_keep_generic_error(self):
         for case, reason in [("request", "BINARY_REQUEST_FAIL"), ("http", "BINARY_HTTP_ERROR"),

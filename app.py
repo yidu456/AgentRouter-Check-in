@@ -2321,12 +2321,18 @@ def main():
             if (group["account_ids"] != json.loads(os.environ["ACCOUNT_IDS"])
                     or group["os"] != os.environ["RUNNER_KEY"] or group["os"] != RUNNERS.get(host_os)):
                 raise ValueError("ROUTE_CONFIG_FAIL")
-            if has_random(config["accounts"]) or os.environ.get("RANDOM_PLAN"):
+            if has_random(config["accounts"]) or os.environ.get("RANDOM_PLAN") or os.environ.get("RANDOM_SNAPSHOT_PATH"):
                 try:
+                    from random_snapshot import load_snapshot
+                    from subscription_pool import _fail, validate_plan
+
                     if not has_random(config["accounts"]) or not os.environ.get("RANDOM_PLAN"):
                         raise ValueError("RANDOM_POOL_FAIL")
                     plan = json.loads(os.environ["RANDOM_PLAN"])
-                    by_id = {a["id"]: a for a in _random_accounts(config, plan)}
+                    validate_plan(plan)
+                    if not os.environ.get("RANDOM_SNAPSHOT_PATH"):
+                        _fail("SNAPSHOT_MISSING", "random_plan")
+                    by_id = {a["id"]: a for a in load_snapshot(os.environ["RANDOM_SNAPSHOT_PATH"], config, plan)}
                 except Exception as error:
                     _write_group_failure(group, Path(os.environ["RESULT_PATH"]), "RANDOM_POOL_FAIL")
                     _log_random_failure(error)

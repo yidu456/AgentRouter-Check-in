@@ -162,9 +162,11 @@ ID 会出现在清单、日志、报告和通知，不要用邮箱或密钥。�
 
 - 从第一个可尝试候选开始，失败关闭浏览器再试下一个，首次成功立即停止；全部失败只影响该账号，不借其他账号节点，不用免费代理、不直连。配置/原生检查失败候选先过滤，`attemptN` 是登录控制器列表序号，未必是原 JSON 下标。
 - 同一 `node` 名或直接链接身份全配置不能重复，`#备注` 不参与比较。仅固定引用不能识别全部 `node`/`link` 交叉重复；节点不同也不保证实际出口 IP 不同，请自行确认独立出口。
-- 随机模式 `prepare` 获取订阅并生成本轮种子/带密钥的池指纹，worker 再读取订阅校验一致，全局按账号 ID 重建分配。先移除所有固定绑定，按可识别的有效节点配置去重，跨系统、跨组、跨账号不重复分配；未使用候选也不借给其他账号。
+- 随机模式 `prepare` 每轮只获取一次订阅并生成种子/带密钥的池指纹，同时保存加密池快照。所有系统的 worker 使用同一快照校验、全局按账号 ID 重建分配，不再重新请求订阅。先移除所有固定绑定，按可识别的有效节点配置去重，跨系统、跨组、跨账号不重复分配；未使用候选也不借给其他账号。
 - 纯随机池允许无名、重名、改名、排序变化，跳过不支持/非法节点；订阅限明文/base64/base64url 链接列表，最大响应 4 MiB，带超时，不支持 Clash YAML/sing-box JSON。混有 `node` 时仍严格要求名称唯一且存在。
-- 固定绑定重复/无效、随机容量不足或准备后有效池/完整配置变化，安全失败，不登录、不重新抽、不共享、不直连；新运行才重新抽。固定名称改名不可忽略。清单只有种子/带密钥指纹，没有节点凭据；完整性指纹不是节点加密，也不保证每轮抽到不同节点。
+- 固定绑定重复/无效、随机容量不足、快照缺失/损坏或阶段间完整配置变化，安全失败，不登录、不重新抽、不共享、不直连。准备后的在线订阅变化不影响本轮；新运行重新下载、重新抽取，固定名称若已改名仍需更新配置。公开清单只有种子/带密钥指纹，没有节点凭据，也不保证每轮抽到不同节点。
+
+无需新增配置字段或 Secret。`random-pool.bin` 使用现有 PyNaCl 的认证加密，密钥由完整私密 `CHECKIN_CONFIG` 派生并绑定仓库、运行 ID 和源码提交；同一次运行重试失败任务可复用，不能跨运行/提交借用。**请保持配置私密，使用不可猜测的密码/订阅凭据**；这不是独立密钥管理，拿到完整配置的任务也能解密。最大密文 16 MiB，作为独立 `checkin-random-pool` 工件保留 1 天，矩阵和汇总任务只下载公开清单，不上传明文节点或解密文件。
 
 ## 4. 基础 `profile` 与自动时区
 
@@ -461,7 +463,7 @@ ISOLATED_DIAGNOSTIC phase=PROXY_START status=FAIL
 
 ```text
 RANDOM_POOL_FAIL
-RANDOM_DIAGNOSTIC field=subscription_url reason=SUBSCRIPTION_HTTP_ERROR status=403
+RANDOM_DIAGNOSTIC field=random_plan reason=SNAPSHOT_MISSING
 RANDOM_DIAGNOSTIC field=random_plan reason=RANDOM_PLAN_MISMATCH
 PROXY_DIAGNOSTIC stage=BINARY_DOWNLOAD reason=BINARY_HTTP_ERROR status=429
 ```
@@ -472,13 +474,16 @@ PROXY_DIAGNOSTIC stage=BINARY_DOWNLOAD reason=BINARY_HTTP_ERROR status=429
 | --- | --- |
 | `RANDOM_PLAN_INVALID` | 随机计划结构不合法；seed/fingerprint 格式由程序校验，不需要手填 |
 | `RANDOM_PLAN_MISMATCH` | 本轮配置、固定节点绑定或有效节点池与准备阶段不一致；不能仅凭此码认定订阅变了，也不是 Chrome 指纹错误 |
-| `SUBSCRIPTION_TIMEOUT` | 可识别的订阅请求/读取超时；其他连接或流错误仍给 `SUBSCRIPTION_REQUEST_FAIL` / `SUBSCRIPTION_READ_FAIL` |
+| `SNAPSHOT_MISSING` / `SNAPSHOT_READ_FAIL` | 加密池工件缺失、过期、下载失败，或文件不能读取；不重新请求订阅兜底 |
+| `SNAPSHOT_INVALID` / `SNAPSHOT_PLAN_MISMATCH` | 密文损坏、配置/仓库/运行/提交不匹配，或解密后的计划与清单不匹配；检查是否用了同一次运行的工件 |
+| `SNAPSHOT_CONTEXT_INVALID` / `SNAPSHOT_TOO_LARGE` / `SNAPSHOT_WRITE_FAIL` | Actions 缺少运行绑定信息、快照超过 16 MiB，或准备阶段无法写入快照/就绪标记 |
+| `SUBSCRIPTION_TIMEOUT` | prepare/本地可识别的订阅请求/读取超时；其他连接或流错误仍给 `SUBSCRIPTION_REQUEST_FAIL` / `SUBSCRIPTION_READ_FAIL`；随机 worker 不再请求订阅 |
 | `POOL_TOO_SMALL` / `FIXED_LINK_INVALID` / `FIXED_NODE_MISSING` | 重建时的容量/固定绑定问题，保留原原因和安全计数，不再吞成统一原因 |
 | `BINARY_REQUEST_FAIL` / `BINARY_HTTP_ERROR` / `BINARY_TIMEOUT` / `BINARY_READ_FAIL` / `BINARY_TOO_LARGE` | Xray 获取压缩包时的请求、HTTP 状态、可识别超时、响应流或大小限制失败；HTTP 状态只允许整数 100～599 |
 
 Xray 官方固定版本下载仅在 HTTP 502/503/504 或明确的 `requests.Timeout` 时有限重试：最多 3 次请求，重试前分别等待 2/4 秒，每次仍使用 30 秒请求/读取超时。日志用 `BINARY_RETRY attempt=2` 或 `attempt=3` 标出下一次尝试；部分下载内容丢弃重下，每次响应关闭，不切换镜像。其他 HTTP 状态（包括 403/404/429/500）、非超时连接/读取错误、大小超限、SHA-256 不符或解压错误不重试。下载成功后仍须通过原来的哈希与 ZIP 检查。
 
-订阅请求和随机分配规则不变；不关闭完整性检查，不静默重新抽取、共享节点或直连。诊断输出为尽力写入，输出流关闭不会改变报告、校验或进程清理。有限重试不能保证上游持续故障时成功；单纯增加下载重试也不能修复随机计划不一致。
+订阅只在 prepare 获取一次；随机分配和完整性规则不变，不静默重新抽取、共享节点或直连。诊断输出为尽力写入，输出流关闭不会改变报告、校验或进程清理。有限下载重试不能保证上游持续故障时成功；共享快照消除重复获取订阅造成的池变化，但不掩盖真实配置不一致。
 
 ### 准备阶段的安全诊断
 

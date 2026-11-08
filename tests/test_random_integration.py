@@ -10,6 +10,7 @@ from unittest.mock import patch
 import app
 import report
 import routing
+import random_snapshot
 
 
 def configuration():
@@ -56,6 +57,7 @@ class RandomRoutingTests(unittest.TestCase):
             with patch.dict(os.environ, {"CHECKIN_CONFIG": json.dumps(configuration())}, clear=True), \
                     patch.object(subscription_pool, "load_pool", return_value=({}, [])) as load, \
                     patch.object(subscription_pool, "make_plan", return_value=metadata), \
+                    patch.object(random_snapshot, "write_snapshot") as snapshot, \
                     contextlib.redirect_stdout(io.StringIO()):
                 routing._prepare(manifest)
             public = json.loads(manifest.read_text())
@@ -63,10 +65,12 @@ class RandomRoutingTests(unittest.TestCase):
             self.assertNotIn("dummy-secret", manifest.read_text())
             self.assertNotIn("fixed.example", manifest.read_text())
             load.assert_called_once_with("https://subscription.example/sub", require_names=False, diagnostics=True)
+            self.assertEqual(snapshot.call_args.args[0], root / random_snapshot.SNAPSHOT_NAME)
             with patch.dict(os.environ, {"GITHUB_ENV": str(env)}, clear=True):
                 routing._assign(manifest, 1, "windows-2022")
             assigned = dict(line.split("=", 1) for line in env.read_text().splitlines())
             self.assertEqual(json.loads(assigned["RANDOM_PLAN"]), metadata)
+            self.assertEqual(Path(assigned["RANDOM_SNAPSHOT_PATH"]), root.resolve() / random_snapshot.SNAPSHOT_NAME)
 
     def test_manifest_random_schema_is_strict_and_isolated_only(self):
         group = {"group_id": "g01", "os": "ubuntu-24.04", "account_ids": ["a01"], "mode": "isolated"}
@@ -82,7 +86,7 @@ class RandomRoutingTests(unittest.TestCase):
 
 
 class RandomWorkerTests(unittest.TestCase):
-    def test_workers_rebuild_one_shared_disjoint_plan_before_selecting_their_group(self):
+    def test_workers_resolve_one_shared_snapshot_before_selecting_their_group(self):
         import subscription_pool
         import proxy_runtime
 
@@ -96,14 +100,17 @@ class RandomWorkerTests(unittest.TestCase):
                     patch.dict(os.environ, {"CHECKIN_CONFIG": json.dumps(configuration()), "GROUP_ID": group["group_id"],
                         "CHECKIN_MODE": "isolated", "RUNNER_KEY": group["os"],
                         "ACCOUNT_IDS": json.dumps(group["account_ids"]), "RANDOM_PLAN": json.dumps(plan),
+                        "RANDOM_SNAPSHOT_PATH": str(Path(directory) / random_snapshot.SNAPSHOT_NAME),
                         "RESULT_PATH": str(Path(directory) / "result.json")}, clear=True), \
                     patch.object(app.platform, "system", return_value=os_name), \
-                    patch.object(subscription_pool, "load_pool", return_value=({}, list(reversed(nodes)))) as load, \
+                    patch.object(subscription_pool, "load_pool", side_effect=AssertionError("refetch forbidden")) as load, \
                     patch.object(app, "run_isolated_group", return_value=0) as run, \
                     patch.object(app, "send_notifications") as notify, self.assertRaises(SystemExit) as exited:
+                random_snapshot.write_snapshot(Path(directory) / random_snapshot.SNAPSHOT_NAME,
+                                               config, plan, {}, list(reversed(nodes)))
                 app.main()
             self.assertEqual(exited.exception.code, 0)
-            load.assert_called_once()
+            load.assert_not_called()
             notify.assert_not_called()
             selected.extend(run.call_args.args[0])
         self.assertEqual({a["id"] for a in selected}, {"a01", "a02"})
