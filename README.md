@@ -77,7 +77,7 @@ Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个�
 
 | 状态 | 含义 / 检查方向 |
 | --- | --- |
-| `ROUTE_CONFIG_FAIL` | CHECKIN_CONFIG 格式或字段不合法，按配置手册核对 |
+| `ROUTE_CONFIG_FAIL` | 准备阶段失败；看紧随其后的 `PREPARE_DIAGNOSTIC` 字段位置、原因和计数，不能仅凭此码认定 JSON 有错 |
 | `NODE_CONFIG_FAIL` | 节点协议/参数无法转换为当前 Xray 支持配置 |
 | `EXIT_IP_FAIL` / `TIMEZONE_LOOKUP_FAIL` | 登录前无法确认代理出口 IP／国家和有效时区，已跳过该候选；检查节点和查询服务可用性 |
 | `PROXY_LIST_EXHAUSTED` | 此账号所有候选不可用；先检查链接、节点出口和订阅 |
@@ -87,6 +87,8 @@ Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个�
 | Cloudflare 入口 404 / JSON 错误 | 核对运行时变量和最新部署，在配置栏查看建议 |
 
 不要根据“登录成功”推断奖励到账；确认当前余额和历史观测差额。固定基本 profile 不等于完整硬件指纹，Runner、Chromium版本、字体、GPU/IP信誉仍可能变化，也不保证账号完全无关联。
+
+准备失败时，新日志只显示安全字段和数字，例如 `reason=SUBSCRIPTION_HTTP_ERROR status=403`，或 `reason=POOL_TOO_SMALL available=11 requested=12`，不打印订阅、节点、账号或密码。详细原因见配置手册。排障请新建一次 **Run workflow → main**；重跑旧记录会继续使用旧提交。
 
 ## 旧配置与本地验证
 

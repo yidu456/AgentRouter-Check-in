@@ -62,7 +62,7 @@ class RandomRoutingTests(unittest.TestCase):
             self.assertEqual(public["random"], metadata)
             self.assertNotIn("dummy-secret", manifest.read_text())
             self.assertNotIn("fixed.example", manifest.read_text())
-            load.assert_called_once_with("https://subscription.example/sub", require_names=False)
+            load.assert_called_once_with("https://subscription.example/sub", require_names=False, diagnostics=True)
             with patch.dict(os.environ, {"GITHUB_ENV": str(env)}, clear=True):
                 routing._assign(manifest, 1, "windows-2022")
             assigned = dict(line.split("=", 1) for line in env.read_text().splitlines())

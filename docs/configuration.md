@@ -407,7 +407,7 @@ python -m unittest discover -s tests
 
 | 状态码 | 检查方向 |
 | --- | --- |
-| `ROUTE_CONFIG_FAIL`/`SCRIPT_FAIL` | JSON 类型、字段、重复绑定、系统或任务分配 |
+| `ROUTE_CONFIG_FAIL`/`SCRIPT_FAIL` | 配置或准备失败；`prepare` 的具体字段、订阅和容量原因见下方安全诊断 |
 | `EXIT_IP_FAIL`/`TIMEZONE_LOOKUP_FAIL` | 登录前代理出口 IP／国家和有效时区查询失败；跳过当前节点，全部失败则不登录 |
 | `NODE_SOURCE_FAIL`/`NODE_MISSING` | 订阅读取/解码/重名/格式，引用名称缺失或不可用 |
 | `NODE_CONFIG_FAIL`/`PROXY_START_FAIL` | URI、协议组合/参数、原生检查/启动/端口/就绪 |
@@ -426,6 +426,34 @@ python -m unittest discover -s tests
 真实 JSON、订阅、节点、API Token、Webhook 只放 Secret。拿到完整 Secret 的任务能读取全部账号/通知凭据，多系统/进程不等于互不信任的凭据隔离。已公开的凭据应轮换，不只是删文本。
 
 内核固定 Xray **26.1.23** 以兼容显式 `allowInsecure`；默认仍验证证书。显式 `1` 失去服务端身份验证，较新版本已移除该开关。该兼容版本不是最新安全基线，禁用 MPTCP 不代表所有后续修复已包含，也不开放受 Hy2/gRPC CA 固定问题影响的 CA 固定字段；长期应使用有效证书、删不安全选项后升级，不靠放宽校验或直连掩盖故障。
+
+### 准备阶段的安全诊断
+
+`routing.py prepare` 失败仍返回退出码 1，并保留 `ROUTE_CONFIG_FAIL`，但后面新增 `PREPARE_DIAGNOSTIC`。它只输出已知字段位置、固定原因码和数字；不输出输入值、账号 ID、订阅/节点 URL、响应原文或异常堆栈。
+
+```text
+PREPARE_DIAGNOSTIC field=groups.ubuntu.accounts[0].profile.locale reason=INVALID_CHOICE
+PREPARE_DIAGNOSTIC field=subscription_url reason=SUBSCRIPTION_HTTP_ERROR status=403
+PREPARE_DIAGNOSTIC field=subscription_url reason=POOL_STATS total=18 valid=17 rejected=1 duplicate=2 distinct=15
+PREPARE_DIAGNOSTIC field=subscription_url reason=POOL_TOO_SMALL distinct=15 excluded=4 available=11 requested=12
+```
+
+| 原因 | 检查方法 |
+| --- | --- |
+| `JSON_INVALID` / `JSON_DUPLICATE_KEY` / `CONFIG_TOO_LARGE` | JSON 语法、重复键或超过 48 KiB；语法错误给出从 1 起算的 `line` / `column` |
+| `FIELDS_INVALID` / `NONEMPTY_STRING` / `INVALID_CHOICE` / `INTEGER_RANGE` | 按 `field` 检查字段类型、必填值、允许值或范围；数组下标从 0 起算 |
+| `DUPLICATE_ID` / `DUPLICATE_LOGIN` / `DUPLICATE_PROXY` | 当前字段与前面重复；同站点同用户名、同一固定节点不得重复绑定 |
+| `SUBSCRIPTION_REQUEST_FAIL` / `SUBSCRIPTION_HTTP_ERROR` / `SUBSCRIPTION_READ_FAIL` | 订阅请求、HTTP 状态或响应读取失败；HTTP 错误仅给数字状态，不给链接或响应原文 |
+| `SUBSCRIPTION_FORMAT_INVALID` / `SUBSCRIPTION_NO_VALID_NODES` / `SUBSCRIPTION_TOO_LARGE` | 返回内容不是支持的明文/base64 节点列表、所有节点被过滤，或超过 4 MiB |
+| `FIXED_LINK_INVALID` / `FIXED_NODE_MISSING` / `FIXED_NODE_DUPLICATE` | 固定链接无法转换、指定名称不存在或实际节点重复；仅给 `account_index` 和 `proxy_index`，不输出凭据 |
+| `POOL_TOO_SMALL` | 查看 `available` 和 `requested`；需要足够节点，不会减少数量、共享或重新抽取来绕过隔离 |
+| `MANIFEST_WRITE_FAIL` | 清单文件写入失败，不等同于 JSON 错误 |
+
+`POOL_STATS` 中，`total` 是解码后的条目数，`valid` 是有效条目数（含重复），`rejected` 是不支持/非法条目数，`duplicate` 是有效条目中重复的数量，`distinct` 是去重后数量。`POOL_CAPACITY_STATS` / `POOL_TOO_SMALL` 的 `excluded` 只计算订阅中与固定绑定匹配的节点，`available = distinct - excluded`，`requested` 为全配置的 `random` 数量总和。出错中止时，部分解析计数可能尚未覆盖所有条目。
+
+固定节点的 `account_index` 是规范化账号数组的下标：v1 为 `accounts` 原顺序；v2 为 Ubuntu → Windows → macOS 各组内部原顺序；`proxy_index` 是该账号代理数组下标，均从 0 起算。成功日志和诊断不改变公共清单、随机指纹、账号隔离或通知时机。
+
+更新后请新建 **Run workflow → main**，不要重跑旧记录；旧记录会使用原提交。日志可用于定位实际原因，但单凭通用 `ROUTE_CONFIG_FAIL` 无法断定是订阅格式、节点容量或配置问题。
 
 ## 8. 通知中的余额、用户组和出口
 

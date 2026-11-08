@@ -439,7 +439,8 @@ class PrepareCliTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertIsNone(manifest)
                 self.assertEqual(output, "")
-                self.assertEqual(result.stderr.strip(), "ROUTE_CONFIG_FAIL")
+                self.assertEqual(result.stderr.splitlines()[0], "ROUTE_CONFIG_FAIL")
+                self.assertIn("PREPARE_DIAGNOSTIC field=", result.stderr)
                 self.assertNotIn("credential-marker-not-json", result.stdout + result.stderr)
 
 

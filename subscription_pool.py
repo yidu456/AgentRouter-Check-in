@@ -13,8 +13,10 @@ _SEED = re.compile(r"[0-9a-f]{32}")
 _FINGERPRINT = re.compile(r"[0-9a-f]{64}")
 
 
-def _fail():
-    raise ValueError("RANDOM_POOL_FAIL")
+def _fail(reason="POOL_INVALID", field="subscription_url", **numbers):
+    error = ValueError("RANDOM_POOL_FAIL")
+    error.diagnostic = {"field": field, "reason": reason, **numbers}
+    raise error
 
 
 def _canonical(value):
@@ -108,29 +110,38 @@ def _neutral(node):
     return result
 
 
-def load_pool(url, require_names=False):
+def load_pool(url, require_names=False, diagnostics=False):
     response = None
+    phase, stats = "URL_INVALID", {}
     try:
-        from routing import _https_url
+        from routing import _https_url, format_diagnostic
 
         _https_url(url)
-        if type(require_names) is not bool:
+        if type(require_names) is not bool or type(diagnostics) is not bool:
             _fail()
         import requests
         from proxy_runtime import _link_lines, _node_name, parse_node_link
 
+        phase = "SUBSCRIPTION_REQUEST_FAIL"
         response = requests.get(url, stream=True, timeout=30)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except Exception:
+            _fail("SUBSCRIPTION_HTTP_ERROR", status=getattr(response, "status_code", None))
+        phase = "SUBSCRIPTION_READ_FAIL"
         chunks, size = [], 0
         for chunk in response.iter_content(64 * 1024):
             if not chunk:
                 continue
             size += len(chunk)
             if size > MAX_POOL_BYTES:
-                _fail()
+                _fail("SUBSCRIPTION_TOO_LARGE")
             chunks.append(chunk)
         named, seen_names, duplicate_names, pool = {}, set(), set(), {}
-        for link in _link_lines(b"".join(chunks)):
+        phase = "SUBSCRIPTION_FORMAT_INVALID"
+        links = _link_lines(b"".join(chunks))
+        stats = {"total": len(links), "valid": 0, "rejected": 0, "duplicate": 0, "distinct": 0}
+        for link in links:
             try:
                 name = _node_name(link)
             except ValueError:
@@ -138,32 +149,44 @@ def load_pool(url, require_names=False):
             if name:
                 if name in seen_names:
                     if require_names:
-                        _fail()
+                        _fail("SUBSCRIPTION_DUPLICATE_NODE_NAME", **stats)
                     duplicate_names.add(name)
                     named.pop(name, None)
                 seen_names.add(name)
             try:
                 node = _neutral(parse_node_link(link, "subscription"))
             except ValueError:
+                stats["rejected"] += 1
                 continue
-            pool[_canonical(node)] = node
+            stats["valid"] += 1
+            identity = _canonical(node)
+            if identity in pool:
+                stats["duplicate"] += 1
+            pool[identity] = node
+            stats["distinct"] = len(pool)
             if name and name not in duplicate_names:
                 named[name] = link
         if not pool:
-            _fail()
+            _fail("SUBSCRIPTION_NO_VALID_NODES", **stats)
+        if diagnostics:
+            print(format_diagnostic({"field": "subscription_url", "reason": "POOL_STATS", **stats}))
         return named, [pool[identity] for identity in sorted(pool)]
+    except ValueError as error:
+        if str(error) == "RANDOM_POOL_FAIL":
+            raise
+        _fail(phase, **stats)
     except Exception:
-        _fail()
+        _fail(phase, **stats)
     finally:
         if response is not None:
             try:
                 response.close()
             except Exception:
-                _fail()
+                _fail("SUBSCRIPTION_CLOSE_FAIL")
 
 
-def _context(config, named_links, nodes):
-    from routing import _normalize_config
+def _context(config, named_links, nodes, diagnostics=False):
+    from routing import _normalize_config, format_diagnostic
     from proxy_runtime import parse_node_link
 
     source = copy.deepcopy(config)
@@ -188,25 +211,34 @@ def _context(config, named_links, nodes):
             _fail()
         named_identities[name] = identity
     reserved, fixed_routes, requested = set(), {}, 0
-    for account in validated["accounts"]:
+    for account_index, account in enumerate(validated["accounts"]):
         for position, candidate in enumerate(account["proxies"]):
             if "random" in candidate:
                 requested += candidate["random"]
                 continue
             if "node" in candidate:
                 name = candidate["node"]
+                if name not in named_identities:
+                    _fail("FIXED_NODE_MISSING", "proxies", account_index=account_index, proxy_index=position)
                 identity = named_identities[name]
                 link = named_links[name]
             else:
                 link = candidate["link"]
-                identity = _canonical(_neutral(parse_node_link(link, "fixed")))
+                try:
+                    identity = _canonical(_neutral(parse_node_link(link, "fixed")))
+                except ValueError:
+                    _fail("FIXED_LINK_INVALID", "proxies", account_index=account_index, proxy_index=position)
             if identity in reserved:
-                _fail()
+                _fail("FIXED_NODE_DUPLICATE", "proxies", account_index=account_index, proxy_index=position)
             reserved.add(identity)
             fixed_routes[(account["id"], position)] = (link, identity)
     eligible = set(pool) - reserved
+    stats = {"distinct": len(pool), "excluded": len(set(pool) & reserved),
+             "available": len(eligible), "requested": requested}
     if requested > len(eligible):
-        _fail()
+        _fail("POOL_TOO_SMALL", **stats)
+    if diagnostics:
+        print(format_diagnostic({"field": "subscription_url", "reason": "POOL_CAPACITY_STATS", **stats}))
     canonical_config = copy.deepcopy(validated)
     canonical_config["accounts"].sort(key=lambda account: account["id"])
     return validated["accounts"], _canonical(canonical_config), pool, reserved, eligible, fixed_routes
@@ -220,15 +252,19 @@ def _fingerprint(seed, key, pool, reserved, fixed_routes):
     return hmac.new(key, _canonical(message), hashlib.sha256).hexdigest()
 
 
-def make_plan(config, named_links, nodes, seed=None):
+def make_plan(config, named_links, nodes, seed=None, diagnostics=False):
     try:
         if seed is None:
             seed = secrets.token_hex(16)
         validate_plan({"seed": seed, "fingerprint": "0" * 64})
-        _, key, pool, reserved, _, fixed_routes = _context(config, named_links, nodes)
+        _, key, pool, reserved, _, fixed_routes = _context(config, named_links, nodes, diagnostics=diagnostics)
         return {"seed": seed, "fingerprint": _fingerprint(seed, key, pool, reserved, fixed_routes)}
+    except ValueError as error:
+        if str(error) == "RANDOM_POOL_FAIL":
+            raise
+        _fail("POOL_PLAN_FAIL")
     except Exception:
-        _fail()
+        _fail("POOL_PLAN_FAIL")
 
 
 def resolve_random_accounts(config, plan, named_links, nodes):
