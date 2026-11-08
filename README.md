@@ -7,7 +7,7 @@ GitHub Actions 使用 Playwright Chromium 和 Xray 代理登录完成签到；�
 1. Fork 本仓库并同步最新 `main`，在 **Actions** 启用工作流。
 2. 在 **Settings → Secrets and variables → Actions** 新建 **Secret `CHECKIN_CONFIG`**，填写以下 JSON 并替换虚构账号和代理。
 3. 打开 **Actions → Ayrouter Daily Check-in → Run workflow**。这会真实登录并可能发送通知；请先核对配置。
-4. 最终汇总在 `notify` 任务。默认 GitHub 定时为北京时间 **06:45**，平台可能延迟；随机启动见下节 Cloudflare。
+4. 最终汇总在 `notify` 任务。GitHub 内置定时默认关闭，保留手动运行；自动随机启动见下节 Cloudflare。
 
 ```json
 {
@@ -58,7 +58,7 @@ Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个�
 2. Worker 运行时设置 `TRIGGER_CONFIG`、GitHub PAT；不要填在 Build variables。令牌创建步骤见 **[令牌指南](cloudflare/API-TOKENS.md)**。
 3. 设置 `DEBUG_ACCESS_TOKEN`（隐藏入口值）、`ADMIN_USERNAME` 和 `ADMIN_PASSWORD`。`/` 只有 `hello world`，打开 **`/<入口值>`** 用用户名密码登录，不是固定 `/token`。
 4. 管理页分为 **仓库管理 / 配置检查 / 运行日志**，分别显示操作和下次时间、错误字段与建议、按仓库分类的调度记录。
-5. 准备启用 Cloudflare 时，删除各目标默认分支旧 `on.schedule`，保留 `workflow_dispatch`，否则两套定时都可能运行。项目不会自动删除你的 Cron。
+5. 确认各目标默认分支的旧 `on.schedule` 已关闭，保留 `workflow_dispatch`。当前版本默认关闭内置 Cron；如果你另行开启，两套定时都可能运行。
 
 新目标默认开启；明确 `enabled:false` 和已有数据库关闭状态不重置。手动运行需要确认，日志删除不改变日程。Worker 企业微信通知仅说明 GitHub 是否受理触发，不是 Actions 已完成或签到成功。
 
