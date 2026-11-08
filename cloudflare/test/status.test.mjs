@@ -29,7 +29,7 @@ test("missing configuration gives a usable read-only page and never initializes 
     assert.equal(http.mock.callCount(), 0);
 });
 
-test("health reports local configuration without identities, raw JSON, or secret values", async (t) => {
+test("private health reports validated configuration identities but never raw JSON or secret values", async (t) => {
     const http = denyEffects(t);
     const env = configured();
     const response = await worker.fetch(new Request("https://status.test/health?token=query-private-marker", {headers:{Authorization:"Basic " + Buffer.from("test-admin:dummy-long-secret-for-tests").toString("base64")}}), env);
@@ -41,8 +41,10 @@ test("health reports local configuration without identities, raw JSON, or secret
     assert.equal(status.github_tokens.configured, 1);
     assert.equal(status.github_tokens.verified, false);
     assert.equal(status.schedule.state, "disabled");
-    for (const privateValue of ["private-owner", "private-repo", "private-id", "PRIVATE_TOKEN",
-            env.PRIVATE_TOKEN, "query-private-marker", env.TRIGGER_CONFIG]) assert.ok(!raw.includes(privateValue));
+    assert.equal(status.config.items[0].id, "private-id");
+    assert.equal(status.config.items[0].repository, "private-owner/private-repo");
+    assert.equal(status.config.items[0].token_secret, "PRIVATE_TOKEN");
+    for (const privateValue of [env.PRIVATE_TOKEN, "query-private-marker", env.TRIGGER_CONFIG]) assert.ok(!raw.includes(privateValue));
     assert.equal(http.mock.callCount(), 0);
 });
 

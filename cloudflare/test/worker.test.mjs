@@ -79,8 +79,8 @@ test("first initialization before window stores Shanghai date and correct UTC al
     const f = fixture(t, { samples: [0] });
     assert.equal((await f.object.fetch(request())).status, 200);
     assert.equal(f.plan().date, "2026-11-07");
-    assert.equal(f.plan().at, Date.parse("2026-11-07T01:00:00+08:00"));
-    assert.equal(f.alarm(), f.plan().at);
+    assert.equal(f.plan().slots[0].at, Date.parse("2026-11-07T01:00:00+08:00"));
+    assert.equal(f.alarm(), f.plan().slots[0].at);
     assert.equal(f.http.mock.callCount(), 0);
 });
 
@@ -88,7 +88,7 @@ test("first initialization inside window schedules tomorrow including year rollo
     const f = fixture(t, { now: "2026-12-31T01:00:00+08:00", samples: [1320] });
     await f.object.fetch(request());
     assert.equal(f.plan().date, "2027-01-01");
-    assert.equal(f.plan().at, Date.parse("2027-01-01T23:00:00+08:00"));
+    assert.equal(f.plan().slots[0].at, Date.parse("2027-01-01T23:00:00+08:00"));
 });
 
 test("restart and repeated Cron preserve target and repair lost alarm without redraw", async (t) => {
@@ -99,7 +99,7 @@ test("restart and repeated Cron preserve target and repair lost alarm without re
     const restarted = new TriggerSchedule(f.ctx, f.env);
     await restarted.fetch(request());
     assert.deepEqual(f.plan(), original);
-    assert.equal(f.alarm(), original.at);
+    assert.equal(f.alarm(), original.slots[0].at);
     assert.equal(f.random.mock.callCount(), 1);
 });
 
@@ -123,8 +123,8 @@ test("accepted dispatch marks attempt before HTTP and schedules independent next
     await f.object.fetch(request());
     f.setNow("2028-02-28T02:00:00+08:00");
     f.http.mock.mockImplementation(async (url, options) => {
-        assert.equal(f.plan().attempted, true);
-        assert.equal(f.plan().result, "DISPATCH_UNKNOWN");
+        assert.equal(f.plan().slots[0].attempted, true);
+        assert.equal(f.plan().slots[0].result, "DISPATCH_UNKNOWN");
         assert.equal(url, "https://api.github.com/repos/owner/AgentRouter-Check-in/actions/workflows/Checkin.yml/dispatches");
         assert.equal(options.method, "POST");
         assert.equal(options.redirect, "manual");
@@ -135,7 +135,7 @@ test("accepted dispatch marks attempt before HTTP and schedules independent next
     });
     await f.object.alarm();
     assert.equal(f.plan().date, "2028-02-29");
-    assert.equal(f.plan().at, Date.parse("2028-02-29T02:00:00+08:00"));
+    assert.equal(f.plan().slots[0].at, Date.parse("2028-02-29T02:00:00+08:00"));
     assert.equal(f.plan().last.result, "DISPATCH_ACCEPTED");
     assert.equal(f.random.mock.callCount(), 2);
     await f.object.alarm();
@@ -233,7 +233,7 @@ test("failed durable attempt write prevents HTTP request", async (t) => {
     f.setNow("2026-11-07T02:00:00+08:00");
     const put = f.storage.put;
     f.storage.put = async (key, value) => {
-        if (value.attempted) throw new Error("disk-private-marker");
+        if (key === "plan" && value.slots[0].attempted) throw new Error("disk-private-marker");
         return put(key, value);
     };
     await assert.rejects(() => f.object.alarm());
@@ -246,7 +246,7 @@ test("crash after attempt persistence does not resend after restart", async (t) 
     f.setNow("2026-11-07T02:00:00+08:00");
     const put = f.storage.put;
     f.storage.put = async (key, value) => {
-        if (value.result === "DISPATCH_ACCEPTED") throw new Error("disk-error");
+        if (key === "plan" && value.slots[0].result === "DISPATCH_ACCEPTED") throw new Error("disk-error");
         return put(key, value);
     };
     await assert.rejects(() => f.object.alarm());
@@ -264,8 +264,8 @@ test("dispatch sends one optional WeCom notice after persisted result and never 
     f.setNow("2026-11-07T02:00:00+08:00");
     f.http.mock.mockImplementation(async (url) => {
         if (url.startsWith("https://api.github.com/")) return new Response(null, { status: 204 });
-        assert.equal(f.plan().result, "DISPATCH_ACCEPTED");
-        assert.equal(f.plan().notification, "NOTIFY_UNKNOWN");
+        assert.equal(f.plan().slots[0].result, "DISPATCH_ACCEPTED");
+        assert.equal(f.plan().slots[0].notification, "NOTIFY_UNKNOWN");
         return Response.json({ errcode: 0 });
     });
     await f.object.alarm();
@@ -300,7 +300,7 @@ test("crash after bot send cannot duplicate dispatch or notification", async (t)
         ? new Response(null, { status: 204 }) : Response.json({ errcode: 0 }));
     const put = f.storage.put;
     f.storage.put = async (key, value) => {
-        if (value.notification === "NOTIFY_ACCEPTED") throw new Error("fixture-storage-error");
+        if (key === "plan" && value.slots[0].notification === "NOTIFY_ACCEPTED") throw new Error("fixture-storage-error");
         return put(key, value);
     };
     await assert.rejects(() => f.object.alarm());
@@ -320,7 +320,7 @@ test("multiple targets have separate state and independent random draws", async 
     const b = new TriggerSchedule({ ...f.ctx, storage: storageB }, f.env);
     await f.object.fetch(request());
     await b.fetch(request("github_b"));
-    assert.notEqual(f.plan().at, valuesB.get("plan").at);
+    assert.notEqual(f.plan().slots[0].at, valuesB.get("plan").slots[0].at);
     assert.equal(f.plan().id, "github_a");
     assert.equal(valuesB.get("plan").id, "github_b");
     assert.equal(f.random.mock.callCount(), 2);

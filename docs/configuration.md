@@ -2,6 +2,8 @@
 
 账号、系统、账号自己的代理和固定浏览器配置，都放在一个 GitHub Actions Secret：`CHECKIN_CONFIG`。在 **Settings → Secrets and variables → Actions → New repository secret** 创建；值是完整 JSON，不加外层引号、代码围栏或注释，不放公开 Variables 或仓库文件。
 
+本手册只说明签到账号；Cloudflare 每日固定/随机 1～24 次使用另一份 Worker 变量 `TRIGGER_CONFIG`，不能混入 `CHECKIN_CONFIG`。填写示例、持久登录与部署步骤见 [Cloudflare 指南](../cloudflare/README.md)。
+
 **推荐 `version: 2`：系统在外层，每个系统下有多个账号。** 下列邮箱、密码、节点、UUID 和机器人凭据都是虚构数据；字段合法不代表能连接、登录或发送消息。解析器以 `routing.py`、节点支持范围以 `proxy_runtime.py` 为准，不是任意客户端/Xray 配置导入器。
 
 ## 1. 三系统完整示例

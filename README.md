@@ -54,17 +54,17 @@ GitHub Actions 使用 Playwright Chromium 和 Xray 代理登录完成签到；�
 
 ## Cloudflare 随机触发与管理
 
-Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个仓库目标、每个日期独立抽取北京时间 **01:00～23:00**，Actions 不提前启动等待。支持多个 GitHub owner，需分别配置 PAT。
+Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个目标支持每天 **1～24 次**固定时间或窗口内随机触发；省略 `schedule` 默认每天一次、北京时间 **01:00～23:00** 随机。Actions 不提前启动等待，多个 GitHub owner 分别配置 PAT。
 
 按 **[Cloudflare 部署指南](cloudflare/README.md)** 完成：
 
 1. Workers Builds 连接自己的仓库：生产分支 `main`，Root directory `cloudflare`，Build `npm test`，Deploy `npm run deploy`。
 2. Worker 运行时设置 `TRIGGER_CONFIG`、GitHub PAT；不要填在 Build variables。令牌创建步骤见 **[令牌指南](cloudflare/API-TOKENS.md)**。
 3. 设置 `DEBUG_ACCESS_TOKEN`（隐藏入口值）、`ADMIN_USERNAME` 和 `ADMIN_PASSWORD`。`/` 只有 `hello world`，打开 **`/<入口值>`** 用用户名密码登录，不是固定 `/token`。
-4. 管理页分为 **仓库管理 / 配置检查 / 运行日志**，分别显示操作和下次时间、错误字段与建议、按仓库分类的调度记录。
+4. 管理页分为 **仓库管理 / 配置检查 / 运行日志**，分别显示操作与已保存时段、可视化状态卡/目标表格/高亮错误字段、按仓库分类的调度记录。安全会话有效 12 小时，刷新无需重新输入密码。
 5. 确认各目标默认分支的旧 `on.schedule` 已关闭，保留 `workflow_dispatch`。当前版本默认关闭内置 Cron；如果你另行开启，两套定时都可能运行。
 
-新目标默认开启；首次登录管理页会为已开启且 Token 有效的新目标保存下一次随机时间，无需关闭再开启。刷新不重新抽时间，也不立即触发；缺失的未来 Alarm 可按原时间恢复。明确 `enabled:false` 和已有数据库关闭状态不重置。手动运行需要确认，日志删除不改变日程。Worker 企业微信通知仅说明 GitHub 是否受理触发，不是 Actions 已完成或签到成功。
+新目标默认开启；首次登录管理页会为已开启且 Token 有效的新目标保存未来日程，无需关闭再开启。刷新不重新抽时间，也不立即触发；缺失的未来 Alarm 可按原时间恢复。明确 `enabled:false` 和已有数据库关闭状态不重置。手动运行不占自动次数，日志删除不改变日程。Worker 企业微信仅说明 GitHub 是否受理触发，不是 Actions 已完成或签到成功。固定/随机填写规则与升级回退注意事项见部署指南。
 
 ## 成功与余额怎么理解
 

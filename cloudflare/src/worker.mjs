@@ -1,37 +1,11 @@
 import { parseConfig, targetBinding, tokenFor } from "./config.mjs";
 import { statusResponse } from "./status.mjs";
 import { sendTriggerNotification } from "./wecom.mjs";
-import { adminResponse, adminGate, adminJson, mutationBody, targetState, UUID } from "./admin.mjs";
+import { adminResponse, adminGate, adminJson, mutationBody, targetState, UUID, basicAuthorized, adminState, loginState } from "./admin.mjs";
+import { sessionStorageResponse } from "./sessions.mjs";
+import { DAY, localDate, validPlan, planBinding, samePlanTarget, pendingSlot, migratePlan, createPlan } from "./scheduling.mjs";
 export { parseConfig } from "./config.mjs";
-
-const DAY = 86_400_000;
-const MINUTE = 60_000;
-const SHANGHAI_OFFSET = 8 * 60 * MINUTE;
-const MINUTES_IN_WINDOW = 1321;
-export function randomMinute() {
-    // Rejection sampling avoids modulo bias without correlating days or targets.
-    const ceiling = Math.floor(0x1_0000_0000 / MINUTES_IN_WINDOW) * MINUTES_IN_WINDOW;
-    const bytes = new Uint32Array(1);
-    do { crypto.getRandomValues(bytes); } while (bytes[0] >= ceiling);
-    return bytes[0] % MINUTES_IN_WINDOW;
-}
-
-function localDate(now) { return new Date(now + SHANGHAI_OFFSET).toISOString().slice(0, 10); }
-function dayStart(date) { return Date.parse(`${date}T00:00:00+08:00`); }
-function nextDate(date) { return localDate(dayStart(date) + DAY); }
-function eligibleDate(now) {
-    const date = localDate(now);
-    return now < dayStart(date) + 60 * MINUTE ? date : nextDate(date);
-}
-
-function validPlan(plan) {
-    return plan && plan.version === 1 && typeof plan.id === "string" && typeof plan.binding === "string"
-        && typeof plan.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(plan.date)
-        && Number.isFinite(dayStart(plan.date)) && localDate(dayStart(plan.date)) === plan.date
-        && Number.isSafeInteger(plan.at) && plan.at >= dayStart(plan.date) + 60 * MINUTE
-        && plan.at <= dayStart(plan.date) + 23 * 60 * MINUTE && plan.at % MINUTE === 0
-        && typeof plan.attempted === "boolean" && typeof plan.result === "string";
-}
+export { randomMinute } from "./scheduling.mjs";
 
 function logResult(id, date, result) { console.log(`TRIGGER ${id} ${date} ${result}`); }
 
@@ -78,6 +52,12 @@ export class TriggerSchedule {
 
     async fetch(request) {
         const url = new URL(request.url);
+        if (url.pathname.startsWith("/session/")) {
+            if (adminState(this.env) !== "configured") return adminJson({ status: "NOT_FOUND" }, 404);
+            if (loginState(this.env) !== "configured") return adminJson({ status: "AUTH_NOT_CONFIGURED" }, 503);
+            const response = await sessionStorageResponse(request, this.ctx, this.env, basicAuthorized);
+            if (response) return response;
+        }
         if (url.pathname.startsWith("/admin/")) {
             const denied = await adminGate(request, this.env);
             if (denied) return denied;
@@ -95,14 +75,14 @@ export class TriggerSchedule {
                 try {
                     let state = await this.snapshot();
                     if (listing) {
-                        if (!state.plan && this.enabled(target, state.control) && tokenFor(target, this.env)) {
+                        if (this.enabled(target, state.control) && tokenFor(target, this.env)
+                                && (!state.plan || state.plan.version === 1 || state.plan.binding !== planBinding(target))) {
                             await this.initialize(target);
                             state = await this.snapshot();
                         } else if (state.plan && this.enabled(target, state.control) && tokenFor(target, this.env)
-                                && state.plan.id === target.id && state.plan.binding === targetBinding(target)
-                                && !state.plan.attempted && state.plan.at > Date.now()
-                                && await this.ctx.storage.getAlarm() === null) {
-                            await this.ctx.storage.setAlarm(state.plan.at);
+                                && state.plan.id === target.id && state.plan.binding === planBinding(target)) {
+                            const slot = pendingSlot(state.plan, Date.now());
+                            if (slot && await this.ctx.storage.getAlarm() === null) await this.ctx.storage.setAlarm(slot.at);
                         }
                         return adminJson(this.describe(target, state));
                     }
@@ -141,25 +121,35 @@ export class TriggerSchedule {
         const summary = targetState(target, this.env);
         summary.enabled = this.enabled(target, state.control);
         const plan = state.plan;
-        if (summary.enabled && summary.token_state === "configured" && plan && plan.id === target.id
-                && plan.binding === targetBinding(target) && !plan.attempted && plan.at > Date.now())
-            summary.next_run = new Date(plan.at).toISOString();
+        if (plan?.version === 2 && plan.id === target.id && plan.binding === planBinding(target)) {
+            summary.schedule_date = plan.date;
+            summary.slots = plan.slots.map(slot => ({ at: new Date(slot.at).toISOString(), attempted: slot.attempted, result: slot.result }));
+            const slot = pendingSlot(plan, Date.now());
+            if (summary.enabled && summary.token_state === "configured" && slot)
+                summary.next_run = new Date(slot.at).toISOString();
+        }
         summary.history = state.history.items;
         return summary;
     }
 
     async initialize(target, reopening = false, arm = true) {
-        const plan = await this.readPlan();
+        let plan = await this.readPlan();
         const now = Date.now();
+        if (plan?.version === 1) {
+            plan = migratePlan(plan, target);
+            await this.ctx.storage.put("plan", plan);
+        }
         if (!plan) await this.planNext(target, null, now, false, arm);
-        else if (plan.id !== target.id || plan.binding !== targetBinding(target)) {
+        else if (plan.id !== target.id || plan.binding !== planBinding(target)) {
             await this.finish(plan, "TARGET_CHANGED");
-            await this.planNext(target, plan, now, true, arm);
-        } else if (plan.attempted) await this.planNext(target, plan, now, true, arm);
-        else if (plan.date < localDate(now) || reopening && plan.at <= now) {
-            await this.finish(plan, "MISSED_DATE");
-            await this.planNext(target, plan, now, true, arm);
-        } else if (arm) await this.ctx.storage.setAlarm(Math.max(plan.at, now + 1));
+            await this.planNext(target, plan, now, !target.schedule && !samePlanTarget(plan, target), arm);
+        } else if (!pendingSlot(plan)) await this.planNext(target, plan, now, true, arm);
+        else if (plan.date < localDate(now) || reopening && pendingSlot(plan).at <= now) {
+            for (const slot of plan.slots.filter(slot => !slot.attempted && slot.at <= now))
+                await this.finish(plan, "MISSED_DATE", slot);
+            if (!pendingSlot(plan)) await this.planNext(target, plan, now, true, arm);
+            else if (arm) await this.ctx.storage.setAlarm(pendingSlot(plan).at);
+        } else if (arm) await this.ctx.storage.setAlarm(Math.max(pendingSlot(plan).at, now + 1));
     }
 
     async mutate(target, state, action, body) {
@@ -267,58 +257,60 @@ export class TriggerSchedule {
         return plan;
     }
 
-    async finish(plan, result) {
-        plan.attempted = true;
-        plan.result = result;
+    async finish(plan, result, selected = null) {
+        for (const slot of selected ? [selected] : plan.slots.filter(slot => !slot.attempted)) {
+            slot.attempted = true;
+            slot.result = result;
+        }
         await this.ctx.storage.put("plan", plan);
         logResult(plan.id, plan.date, result);
     }
 
     async planNext(target, previous, now, afterPrevious = false, arm = true) {
-        let date = eligibleDate(now);
-        if (afterPrevious && previous && date <= previous.date) date = nextDate(previous.date);
-        const plan = { version: 1, id: target.id, binding: targetBinding(target), date,
-            at: dayStart(date) + (60 + randomMinute()) * MINUTE,
-            attempted: false, result: "PLANNED" };
-        if (previous) {
-            plan.last = { date: previous.date, at: previous.at, result: previous.result };
-            if (previous.notification) plan.last.notification = previous.notification;
-        }
+        const plan = createPlan(target, previous, now, afterPrevious);
         await this.ctx.storage.put("plan", plan);
-        if (arm) await this.ctx.storage.setAlarm(plan.at);
-        console.log(`TRIGGER ${target.id} ${date} PLANNED ${new Date(plan.at).toISOString()}`);
+        if (arm) await this.ctx.storage.setAlarm(pendingSlot(plan).at);
+        console.log(`TRIGGER ${target.id} ${plan.date} PLANNED ${new Date(pendingSlot(plan).at).toISOString()}`);
     }
 
     async alarm() {
         return this.ctx.blockConcurrencyWhile(async () => {
-            const plan = await this.readPlan();
+            let plan = await this.readPlan();
             if (!plan) return;
             const selected = await this.select(plan.id);
             if (!selected) return;
             const { target, token } = selected;
-            const now = Date.now();
-            if (plan.binding !== targetBinding(target)) {
-                await this.finish(plan, "TARGET_CHANGED");
-                return this.planNext(target, plan, now, true);
+            if (plan.version === 1) {
+                plan = migratePlan(plan, target);
+                await this.ctx.storage.put("plan", plan);
             }
-            if (plan.attempted) return this.planNext(target, plan, now, true);
-            if (now < plan.at) return this.ctx.storage.setAlarm(plan.at);
+            const now = Date.now();
+            if (plan.binding !== planBinding(target)) {
+                await this.finish(plan, "TARGET_CHANGED");
+                return this.planNext(target, plan, now, !target.schedule && !samePlanTarget(plan, target));
+            }
+            if (!pendingSlot(plan)) return this.planNext(target, plan, now, true);
+            if (now < pendingSlot(plan).at) return this.ctx.storage.setAlarm(pendingSlot(plan).at);
             if (plan.date !== localDate(now)) {
                 await this.finish(plan, "MISSED_DATE");
                 return this.planNext(target, plan, now, true);
             }
+            const due = plan.slots.filter(slot => !slot.attempted && slot.at <= now);
+            for (const slot of due.slice(0, -1)) await this.finish(plan, "MISSED_DATE", slot);
+            const slot = due.at(-1);
             const history = await this.ctx.storage.get("history") ?? { version: 1, items: [] };
             if (!validHistory(history)) throw new Error("STATE_INVALID");
             const record = { id: crypto.randomUUID(), at: now, source: "automatic",
                 result: "DISPATCH_UNKNOWN", notification: "NOTIFY_UNKNOWN" };
             await this.dispatch(target, token, record, async (value) => {
-                plan.history_id = value.id;
-                plan.notification = value.notification;
-                await this.finish(plan, value.result);
+                slot.history_id = value.id;
+                slot.notification = value.notification;
+                await this.finish(plan, value.result, slot);
                 updateHistory(history, value);
                 await this.ctx.storage.put("history", history);
             }, plan.date);
-            await this.planNext(target, plan, Date.now(), true);
+            if (pendingSlot(plan)) await this.ctx.storage.setAlarm(pendingSlot(plan).at);
+            else await this.planNext(target, plan, Date.now(), true);
         });
     }
 }

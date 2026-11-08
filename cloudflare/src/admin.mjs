@@ -1,5 +1,6 @@
-import { parseConfig, tokenFor } from "./config.mjs";
+import { parseConfig, tokenFor, scheduleFor } from "./config.mjs";
 import { adminClient } from "./admin-ui.mjs";
+import { sessionApiResponse, sessionAuthorized } from "./sessions.mjs";
 
 const ACCESS = /^[A-Za-z0-9_-]{32,128}$/;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -18,7 +19,7 @@ export function loginState(env = {}) {
         && !/[\x00-\x1f\x7f]/.test(secret) ? "configured" : "invalid";
 }
 
-export async function authorized(request, env) {
+export async function basicAuthorized(request, env) {
     if (adminState(env) !== "configured" || loginState(env) !== "configured") return false;
     const header = request.headers.get("Authorization");
     if (!header || header.length > 2048) return false;
@@ -41,6 +42,11 @@ export async function authorized(request, env) {
     return crypto.subtle.timingSafeEqual(actual, expected);
 }
 
+export async function authorized(request, env) {
+    if (adminState(env) !== "configured" || loginState(env) !== "configured") return false;
+    return request.headers.has("Authorization") ? basicAuthorized(request, env) : sessionAuthorized(request, env);
+}
+
 export function adminJson(value, status = 200) {
     return Response.json(value, { status, headers: { "Cache-Control": "no-store",
         "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
@@ -50,7 +56,14 @@ export function adminJson(value, status = 200) {
 export async function adminGate(request, env) {
     if (adminState(env) !== "configured") return adminJson({ status: "NOT_FOUND" }, 404);
     if (loginState(env) !== "configured") return adminJson({ status: "AUTH_NOT_CONFIGURED" }, 503);
-    if (!await authorized(request, env)) return adminJson({ status: "UNAUTHORIZED" }, 401);
+    try {
+        if (!await authorized(request, env)) return adminJson({ status: "UNAUTHORIZED" }, 401);
+    } catch (error) {
+        const codes = { STATE_INVALID: 503, STORAGE_UNAVAILABLE: 503, CSRF_REJECTED: 403,
+            ORIGIN_REJECTED: 403, JSON_REQUIRED: 415 };
+        const code = Object.hasOwn(codes, error?.message ?? "") ? error.message : "STORAGE_UNAVAILABLE";
+        return adminJson({ status: code }, codes[code]);
+    }
     return null;
 }
 
@@ -92,7 +105,7 @@ export function targetState(target, env) {
     return { id: target.id, repository: target.repository, workflow: target.workflow, ref: target.ref,
         enabled: target.enabled, token_state: tokenFor(target, env) ? "configured"
             : env[target.token_secret] === undefined || env[target.token_secret] === "" ? "missing" : "invalid",
-        next_run: null, history: [], error: null };
+        next_run: null, history: [], error: null, schedule: scheduleFor(target), schedule_date: null, slots: [] };
 }
 
 export async function adminResponse(request, env) {
@@ -107,6 +120,12 @@ export async function adminResponse(request, env) {
         return new Response(request.method === "HEAD" ? null : `(${adminClient.toString()})();`, { headers });
     }
     if (url.pathname !== "/api/admin" && !url.pathname.startsWith("/api/admin/")) return null;
+    if (url.pathname === "/api/admin/session" || url.pathname.startsWith("/api/admin/session/")) {
+        if (adminState(env) !== "configured") return adminJson({ status: "NOT_FOUND" }, 404);
+        if (loginState(env) !== "configured") return adminJson({ status: "AUTH_NOT_CONFIGURED" }, 503);
+        const session = await sessionApiResponse(request, env, basicAuthorized);
+        if (session) return session;
+    }
     const denied = await adminGate(request, env);
     if (denied) return denied;
     const listing = request.method === "GET" && url.pathname === "/api/admin/targets";
@@ -124,10 +143,19 @@ export async function adminResponse(request, env) {
     if (!listing && !target) return adminJson({ status: "TARGET_NOT_FOUND" }, 404);
     const objectRequest = async (item, action, payload) => {
         const stub = env.SCHEDULES.get(env.SCHEDULES.idFromName(`v1:${item.id}`));
-        return stub.fetch(new Request(`https://scheduler.internal/admin/${action}?id=${item.id}`, {
+        const objectUrl = new URL(request.url);
+        objectUrl.pathname = `/admin/${action}`;
+        objectUrl.search = `?id=${item.id}`;
+        objectUrl.hash = "";
+        const headers = new Headers();
+        for (const name of ["Authorization", "Cookie", "Origin", "X-CSRF-Token"]) {
+            const value = request.headers.get(name);
+            if (value !== null) headers.set(name, value);
+        }
+        if (action !== "state") headers.set("Content-Type", "application/json");
+        return stub.fetch(new Request(objectUrl, {
             method: action === "state" ? "GET" : "POST",
-            headers: { Authorization: request.headers.get("Authorization"),
-                ...(action === "state" ? {} : { "Content-Type": "application/json" }) },
+            headers,
             ...(action === "state" ? {} : { body: JSON.stringify(payload) }),
         }));
     };

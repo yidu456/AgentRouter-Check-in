@@ -104,9 +104,11 @@ test("authenticated first read schedules enabled target without dispatch or repe
     assert.equal(response.headers.get("Access-Control-Allow-Origin"), null);
     assert.deepEqual(await response.json(), { status: "OK", targets: [{ id: "github_a", repository: "owner/repo",
         workflow: "Checkin.yml", ref: "main", enabled: true, token_state: "configured",
-        next_run: "2026-11-06T18:00:00.000Z", history: [], error: null }] });
+        next_run: "2026-11-06T18:00:00.000Z", history: [], error: null,
+        schedule: { mode: "random", count: 1, window: { start: "01:00", end: "23:00" } },
+        schedule_date: "2026-11-07", slots: [{ at: "2026-11-06T18:00:00.000Z", attempted: false, result: "PLANNED" }] }] });
     const plan = structuredClone(f.values.get("plan"));
-    assert.equal(f.alarm(), plan.at);
+    assert.equal(f.alarm(), plan.slots[0].at);
     await f.call();
     assert.deepEqual(f.values.get("plan"), plan);
     assert.equal(f.http.mock.callCount(), 0);
@@ -135,7 +137,7 @@ test("initial alarm storage failure can recover without redraw or dispatch", asy
     const recovered = (await (await f.call()).json()).targets[0];
     assert.equal(recovered.next_run, "2026-11-06T18:00:00.000Z");
     assert.deepEqual(f.values.get("plan"), plan);
-    assert.equal(f.alarm(), plan.at);
+    assert.equal(f.alarm(), plan.slots[0].at);
     assert.equal(f.http.mock.callCount(), 0);
 });
 
@@ -195,10 +197,10 @@ test("database enable overrides JSON false and cron visits configured disabled t
     const f = fixture(t, { targets: [target({ enabled: false })] });
     assert.equal((await f.call("/github_a/enabled", { enabled: true })).status, 200);
     const plan = structuredClone(f.values.get("plan"));
-    assert.equal(plan.attempted, false);
+    assert.equal(plan.slots[0].attempted, false);
     await f.storage.deleteAlarm();
     await worker.scheduled({}, f.env);
-    assert.equal(f.alarm(), plan.at);
+    assert.equal(f.alarm(), plan.slots[0].at);
     assert.deepEqual(f.values.get("plan"), plan);
     assert.deepEqual(f.namespaceCalls.slice(-1), ["v1:github_a"]);
 });
@@ -210,7 +212,7 @@ test("reopen retains only a future unattempted matching plan and skips elapsed s
     await f.call("/github_a/enabled", { enabled: false });
     await f.call("/github_a/enabled", { enabled: true });
     assert.deepEqual(f.values.get("plan"), before);
-    assert.equal(f.alarm(), before.at);
+    assert.equal(f.alarm(), before.slots[0].at);
     await f.call("/github_a/enabled", { enabled: false });
     f.setNow("2026-11-07T02:05:00+08:00");
     await f.call("/github_a/enabled", { enabled: true });
@@ -251,7 +253,7 @@ for (const stage of ["read", "skip", "replan"]) {
             return get(key);
         };
         f.storage.put = async (key, value) => {
-            if (key === "plan" && (stage === "skip" && value.result === "MISSED_DATE"
+            if (key === "plan" && (stage === "skip" && value.slots[0].result === "MISSED_DATE"
                     || stage === "replan" && value.date === "2026-11-08")) throw new Error("fixture_write_failure");
             return put(key, value);
         };
@@ -293,7 +295,8 @@ test("target identity changes ignore old persisted overrides and invalidate acti
     f.env.TRIGGER_CONFIG = config([target({ repository: "other/repo" })]);
     const state = (await (await f.call()).json()).targets[0];
     assert.equal(state.enabled, true);
-    assert.equal(state.next_run, null);
+    assert.equal(state.next_run, "2026-11-07T18:00:00.000Z");
+    assert.equal(f.http.mock.callCount(), 0);
     await f.init();
     assert.equal(f.values.get("plan").last.result, "TARGET_CHANGED");
 });
@@ -305,7 +308,7 @@ test("read retains future plan while rearming missing alarm and suppresses missi
     const expected = "2026-11-06T18:00:00.000Z";
     await f.storage.deleteAlarm();
     assert.equal((await (await f.call()).json()).targets[0].next_run, expected);
-    assert.equal(f.alarm(), f.values.get("plan").at);
+    assert.equal(f.alarm(), f.values.get("plan").slots[0].at);
     assert.deepEqual([...f.values], before);
     f.env.GITHUB_TOKEN_A = "";
     assert.equal((await (await f.call()).json()).targets[0].next_run, null);
@@ -433,8 +436,8 @@ test("failed automatic history write leaves attempted plan and cannot send on la
         return put(key, value);
     };
     await assert.rejects(() => f.object.alarm());
-    assert.equal(f.values.get("plan").attempted, true);
-    assert.equal(f.values.get("plan").result, "DISPATCH_UNKNOWN");
+    assert.equal(f.values.get("plan").slots[0].attempted, true);
+    assert.equal(f.values.get("plan").slots[0].result, "DISPATCH_UNKNOWN");
     f.storage.put = put;
     await new TriggerSchedule(f.ctx, f.env).alarm();
     assert.equal(f.http.mock.callCount(), 0);
@@ -494,7 +497,7 @@ test("distinct manual requests have thirty-second cooldown and twenty-record his
     assert.equal((await (await f.call("/github_a/run", { request_id: uuid() })).json()).cached, true);
     assert.equal(f.http.mock.callCount(), 21);
     assert.equal(f.values.has("plan"), true);
-    assert.equal(f.alarm(), f.values.get("plan").at);
+    assert.equal(f.alarm(), f.values.get("plan").slots[0].at);
 });
 
 test("valid receipts never evict at capacity and expire after twenty-four hours", async (t) => {
@@ -560,7 +563,7 @@ test("automatic history UNKNOWN is linked to persisted plan before HTTP and shar
     f.setNow("2026-11-07T02:00:00+08:00");
     f.http.mock.mockImplementation(async () => {
         const record = f.values.get("history").items[0];
-        assert.equal(record.id, f.values.get("plan").history_id);
+        assert.equal(record.id, f.values.get("plan").slots[0].history_id);
         assert.equal(record.result, "DISPATCH_UNKNOWN");
         assert.equal(record.notification, "NOTIFY_UNKNOWN");
         assert.equal(record.source, "automatic");

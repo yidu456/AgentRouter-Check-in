@@ -1,12 +1,15 @@
-import { parseConfig, tokenFor } from "./config.mjs";
+import { inspectConfig, parseConfig, tokenFor } from "./config.mjs";
 import { wecomState } from "./wecom.mjs";
 import { adminState, adminGate, loginState } from "./admin.mjs";
 import { adminShell } from "./admin-ui.mjs";
 
 export function configurationStatus(env = {}) {
+    const config = inspectConfig(env.TRIGGER_CONFIG, env);
+    config.items = config.items.map(item => ({ ...item, token_state: item.token_secret === null ? null
+        : tokenFor(item, env) ? "configured" : env[item.token_secret] === undefined ? "missing" : "invalid" }));
     const status = {
         mode: "read_only", time_zone: "Asia/Shanghai",
-        config: { state: env.TRIGGER_CONFIG === undefined ? "missing" : "valid", error: null },
+        config,
         targets: { total: 0, enabled: 0 },
         github_tokens: { configured: 0, missing: 0, invalid: 0, verified: false },
         wecom: { state: wecomState(env), verified: false },
@@ -46,7 +49,7 @@ function tokenPage(env) {
 .access{max-width:460px;margin:80px auto;padding:28px;background:#fff;border:1px solid #cbdcdf;border-radius:10px}.access h1{font:28px "Songti SC",SimSun,serif}.access input{display:block;box-sizing:border-box;width:100%;padding:12px;margin:10px 0 16px;border:1px solid #8ba9af;border-radius:5px;font:inherit}.access button{padding:10px 18px;border:0;border-radius:5px;background:#164e59;color:#fff;font:inherit}.access small{display:block;color:#536d74}.access :focus-visible{outline:3px solid #087579;outline-offset:3px}@media(max-width:520px){.access{margin:30px 16px;padding:22px}}</style></head><body>
 <section class="access" data-public-view><h1>仓库管理</h1><p>使用管理员用户名和密码登录。</p>
 <form data-access-form><label for="access-user">用户名</label><input id="access-user" type="text" data-access-username autocomplete="off" spellcheck="false" required maxlength="64"><label for="access-secret">密码</label><input id="access-secret" type="password" data-access-input autocomplete="off" required minlength="12" maxlength="256"><button type="submit" data-access-submit>登录管理</button></form>
-<p data-access-feedback role="status" aria-live="polite">${loginState(env) === "configured" ? "仅验证访问权限，不会运行签到。" : "登录配置缺失或不合法，请在 Cloudflare 配置 ADMIN_USERNAME 和 ADMIN_PASSWORD 后保存部署。"}</p><small>凭据仅在本页内存中使用，通过 HTTPS 验证，不写入浏览器存储。隐藏入口不是登录密码。</small><noscript>需要启用 JavaScript 才能加载管理页面。</noscript></section>
+<p data-access-feedback role="status" aria-live="polite">${loginState(env) === "configured" ? "正在检查现有会话；登录与刷新不会提交签到任务。" : "登录配置缺失或不合法，请在 Cloudflare 配置 ADMIN_USERNAME 和 ADMIN_PASSWORD 后保存部署。"}</p><small>用户名和密码仅用于 HTTPS 登录，提交后立即清除；安全 Cookie 会话固定 12 小时，刷新可恢复。隐藏入口不是登录密码。</small><noscript>需要启用 JavaScript 才能加载管理页面。</noscript></section>
 ${adminShell()}<script src="/admin/client.js"></script></body></html>`;
 }
 
