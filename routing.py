@@ -6,7 +6,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from urllib.parse import parse_qs, urldefrag, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlencode, urldefrag, urlsplit, urlunsplit
 
 
 DEFAULT_SITE = "https://agentrouter.org"
@@ -289,8 +289,25 @@ def _direct_link(value):
     return value
 
 
+def normalize_vless_ws_link(value):
+    parsed = urlsplit(value)
+    if parsed.scheme.lower() != "vless" or re.search(r"%(?![0-9a-fA-F]{2})", parsed.query):
+        return value
+    try:
+        query = parse_qs(parsed.query, keep_blank_values=True, errors="strict")
+    except ValueError:
+        return value
+    # Leave malformed queries intact so the original parser rejects them before removal.
+    if any(len(values) != 1 for values in query.values()):
+        return value
+    if query.get("security") != ["tls"] or query.get("type") != ["ws"]:
+        return value
+    fields = sorted((key, values[0]) for key, values in query.items() if key not in {"fp", "ech"})
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(fields), parsed.fragment))
+
+
 def _link_identity(value):
-    link = urldefrag(value)[0]
+    link = urldefrag(normalize_vless_ws_link(value))[0]
     parsed = urlsplit(link)
     scheme = parsed.scheme.lower()
     if scheme == "vmess":

@@ -214,7 +214,7 @@ ID 会出现在清单、日志、报告和通知，不要用邮箱或密钥。�
 
 ## 6. 节点链接支持的字段与完整示例
 
-所有协议都需要有效节点服务器地址和 1～65535 端口。节点 URI 的外层查询参数不允许重复同名键，不支持的参数会失败，而不是偷偷忽略；WS 路径内部的查询规则另见 `ed` 说明。特殊字符必须按 URL 编码；`#备注` 是可选名称，不是鉴权信息。
+所有协议都需要有效节点服务器地址和 1～65535 端口。节点 URI 的外层查询参数不允许重复同名键，不支持的参数会失败；唯一的兼容整理例外是第 6.1 节说明的 VLESS + WS + 普通 TLS 的 `fp`、`ech`。WS 路径内部的查询规则另见 `ed` 说明。特殊字符必须按 URL 编码；`#备注` 是可选名称，不是鉴权信息。
 
 ### 6.1 VLESS
 
@@ -236,13 +236,15 @@ ID 会出现在清单、日志、报告和通知，不要用邮箱或密钥。�
 | `eh` | 只用于 WS，支持 `Sec-WebSocket-Protocol`（头名称大小写不敏感）；省略使用 Xray 固定机制 |
 | `pbk` / `publicKey` | Reality 公钥，必须与服务端匹配；普通 TLS/无 TLS 不支持此字段 |
 | `sid` / `shortId` | Reality short ID，必须为 2～16 个十六进制字符，长度为偶数，不能省略/空 |
-| `fp` | 仅 Reality：`chrome`、`firefox`、`edge`、`safari`、`360`、`qq`、`ios`、`android`、`random`、`randomized`；默认 `chrome` |
+| `fp` | Reality：`chrome`、`firefox`、`edge`、`safari`、`360`、`qq`、`ios`、`android`、`random`、`randomized`；默认 `chrome`。VLESS + WS + 普通 TLS 会移除此字段，使用原有核心默认行为 |
+| `ech` | 仅 VLESS + WS + 普通 TLS 的兼容整理会移除此字段；不发起 ECH DNS 查询，也不代表支持 ECH |
 
 重要组合限制：
 
 - 无 TLS 时不能附带 `sni`、`serverName`、`insecure`、`allowInsecure` 等 TLS 参数，即使填写的是 `allowInsecure=0`。
 - Reality 不支持 WS，也不允许启用不安全证书开关；显式 `0`/`false` 可接受，`1`/`true` 会失败。当前可用组合为 TCP/gRPC，Vision 则只允许 TCP。
-- 普通 TLS 的 `fp=chrome` 当前也不在解析器支持范围内；不要把其他客户端的所有扩展参数直接照搬。
+- VLESS + WS + 普通 TLS 的导入会移除 `fp`、`ech`，与不含这些字段的客户端分享链接使用同一解析逻辑；固定 `link`、订阅命名节点和随机池均适用。**移除 ECH 后不再隐藏 TLS 服务名，但 TLS 加密仍保留，证书开关按原配置执行，默认验证证书。** 不更改 UUID、地址、端口、SNI、Host、路径或已有 Early Data，也不统一补 `ed=2048`。
+- 其他普通 TLS/无 TLS 的 `fp` 仍不支持；不移除其他未知参数。XHTTP 的 `type=xhttp`、`mode`、`extra` 不支持，随机池会跳过，不能删掉它们把 XHTTP 伪造成 WS。
 - WS 路径中的 `ed` 也会被识别。如果外层 `ed` 和路径内 `ed` 同时存在，数值必须一致；路径内不能有两个 `ed`。其他重复查询键可以保留。
 - `eh=` 空值仅在有效 Early Data 数量为 0 时允许；启用 Early Data 不能指定空头或 `X-Early-Data` 等自定义头。
 - Xray 从路径 `ed` 参数读取 Early Data 设置，使用固定协议头传输；该设置不代表服务端收到的请求路径必须保留 `ed` 参数。
@@ -258,6 +260,8 @@ WS + TLS + Early Data，默认验证证书：
 ```text
 vless://11111111-1111-4111-8111-111111111111@node.example.com:443?encryption=none&security=tls&type=ws&host=front.example.com&sni=tls.example.com&path=%2Fsocket%3Fmarker%3Ddummy&ed=2048&eh=Sec-WebSocket-Protocol#vless-ws
 ```
+
+上述 WS + TLS 链接即使来自订阅并附带 `fp=chrome&ech=...`，也会先移除这两个字段后按原规则解析，不需要手动修改订阅。名称或这两个字段不同、实际有效配置相同的节点会合并去重，并用于固定节点排除；不改变账号独占代理和随机不重复分配规则。混合订阅可能显示 `total=144 valid=72 rejected=72`：计数表示导入是否支持，不表示节点在线或离线。
 
 gRPC + TLS：
 

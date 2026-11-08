@@ -376,7 +376,9 @@ def _tls(server, query, required=False, reality=False):
 
 
 def _parse_vless(link, tag):
-    parsed, server, port, query = _common_url(link)
+    from routing import normalize_vless_ws_link
+
+    parsed, server, port, query = _common_url(normalize_vless_ws_link(link))
     _only_query(query, {
         "encryption", "flow", "security", "sni", "serverName", "insecure", "allowInsecure",
         "pbk", "publicKey", "sid", "shortId", "fp", "type", "path", "host", "serviceName", "service_name",

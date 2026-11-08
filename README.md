@@ -90,6 +90,8 @@ Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个�
 
 准备失败时，新日志只显示安全字段和数字，例如 `reason=SUBSCRIPTION_HTTP_ERROR status=403`，或 `reason=POOL_TOO_SMALL available=11 requested=12`，不打印订阅、节点、账号或密码。详细原因见配置手册。排障请新建一次 **Run workflow → main**；重跑旧记录会继续使用旧提交。
 
+VLESS + WS + 普通 TLS 自动移除 `fp`、`ech` 后复用原解析器，保留 TLS/SNI/Host/路径/已有 Early Data；移除 ECH 会失去隐藏 TLS 服务名的保护。XHTTP 仍跳过，不转换成 WS；完整限制见配置手册第 6.1 节。
+
 ## 旧配置与本地验证
 
 旧模式仍支持 `ACCOUNTS`（如 `https://agentrouter.org|user@example.com:example-secret`）或 `USERNAME` / `PASSWORD`，以及 `TG_BOT_TOKEN` / `TG_CHAT_ID`。非空 `CHECKIN_CONFIG` 不与旧变量混用；严格独立代理请使用新模式，不要清空 Secret 来绕过错误。
