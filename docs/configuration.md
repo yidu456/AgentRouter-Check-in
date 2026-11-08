@@ -476,7 +476,9 @@ PROXY_DIAGNOSTIC stage=BINARY_DOWNLOAD reason=BINARY_HTTP_ERROR status=429
 | `POOL_TOO_SMALL` / `FIXED_LINK_INVALID` / `FIXED_NODE_MISSING` | 重建时的容量/固定绑定问题，保留原原因和安全计数，不再吞成统一原因 |
 | `BINARY_REQUEST_FAIL` / `BINARY_HTTP_ERROR` / `BINARY_TIMEOUT` / `BINARY_READ_FAIL` / `BINARY_TOO_LARGE` | Xray 获取压缩包时的请求、HTTP 状态、可识别超时、响应流或大小限制失败；HTTP 状态只允许整数 100～599 |
 
-不改变超时、重试或分配规则；不关闭完整性检查，不静默重新抽取、共享节点或直连。诊断输出为尽力写入，输出流关闭不会改变报告、校验或进程清理。
+Xray 官方固定版本下载仅在 HTTP 502/503/504 或明确的 `requests.Timeout` 时有限重试：最多 3 次请求，重试前分别等待 2/4 秒，每次仍使用 30 秒请求/读取超时。日志用 `BINARY_RETRY attempt=2` 或 `attempt=3` 标出下一次尝试；部分下载内容丢弃重下，每次响应关闭，不切换镜像。其他 HTTP 状态（包括 403/404/429/500）、非超时连接/读取错误、大小超限、SHA-256 不符或解压错误不重试。下载成功后仍须通过原来的哈希与 ZIP 检查。
+
+订阅请求和随机分配规则不变；不关闭完整性检查，不静默重新抽取、共享节点或直连。诊断输出为尽力写入，输出流关闭不会改变报告、校验或进程清理。有限重试不能保证上游持续故障时成功；单纯增加下载重试也不能修复随机计划不一致。
 
 ### 准备阶段的安全诊断
 
