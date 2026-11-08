@@ -68,6 +68,13 @@ def _proxy_fail():
     raise RuntimeError("PROXY_START_FAIL")
 
 
+def _diagnostic(message):
+    try:
+        print(message, flush=True)
+    except (OSError, ValueError):
+        pass  # Diagnostics must not change validation or owned-process cleanup.
+
+
 def _decode_base64(value):
     if not isinstance(value, (str, bytes)):
         _node_fail()
@@ -609,15 +616,20 @@ def _read_executable(asset, archive_data):
 
 
 def download_binary(system, machine, directory):
+    stage = "BINARY_PLATFORM"
     try:
         key = (system, _normalize_machine(machine))
         if key not in ASSETS:
             _binary_fail()
         asset, expected_digest = ASSETS[key]
+        stage = "BINARY_DOWNLOAD"
         archive_data = _archive_bytes(DOWNLOAD_PREFIX + asset)
+        stage = "BINARY_HASH"
         if hashlib.sha256(archive_data).hexdigest() != expected_digest:
             _binary_fail()
+        stage = "BINARY_EXTRACT"
         destination_name, executable = _read_executable(asset, archive_data)
+        stage = "BINARY_WRITE"
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         if os.name != "nt":
@@ -627,12 +639,15 @@ def download_binary(system, machine, directory):
             stream.write(executable)
         if os.name != "nt":
             destination.chmod(0o700)
+        _diagnostic("PROXY_DIAGNOSTIC stage=BINARY_READY")
         return destination
     except ValueError as error:
+        _diagnostic(f"PROXY_DIAGNOSTIC stage={stage} status=FAIL")
         if str(error) == "BINARY_DOWNLOAD_FAIL":
             raise
         _binary_fail()
     except Exception:
+        _diagnostic(f"PROXY_DIAGNOSTIC stage={stage} status=FAIL")
         _binary_fail()
 
 
@@ -792,8 +807,15 @@ def _check_config(binary, config_path):
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=CHECK_TIMEOUT,
             creationflags=_creationflags(), env=_native_environment(),
         )
-        return result.returncode == 0
+        if result.returncode != 0:
+            _diagnostic("PROXY_DIAGNOSTIC stage=NATIVE_CHECK_REJECTED")
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        _diagnostic("PROXY_DIAGNOSTIC stage=NATIVE_CHECK_TIMEOUT")
+        return False
     except (OSError, subprocess.SubprocessError):
+        _diagnostic("PROXY_DIAGNOSTIC stage=NATIVE_CHECK_EXEC_FAIL")
         return False
 
 
@@ -852,12 +874,14 @@ def _stop_child(child):
 
 def start_proxy(outbounds, binary, directory):
     child = None
+    stage = "CANDIDATE_CHECK"
     try:
         if not isinstance(outbounds, dict) or not 1 <= len(outbounds) <= MAX_ENDPOINTS:
             _proxy_fail()
         valid = {}
         directory = Path(directory)
-        for candidate_tag, outbound in outbounds.items():
+        for index, (candidate_tag, outbound) in enumerate(outbounds.items(), 1):
+            _diagnostic(f"PROXY_DIAGNOSTIC stage=CANDIDATE_CHECK candidate={index}")
             candidate_path = None
             try:
                 candidate_config, _ = build_proxy_config({candidate_tag: outbound})
@@ -866,6 +890,7 @@ def start_proxy(outbounds, binary, directory):
                 if _check_config(binary, candidate_path):
                     valid[candidate_tag] = outbound
             except (OSError, TypeError, ValueError):
+                _diagnostic(f"PROXY_DIAGNOSTIC stage=CANDIDATE_CONFIG_FAIL candidate={index}")
                 continue
             finally:
                 if candidate_path is not None:
@@ -873,18 +898,25 @@ def start_proxy(outbounds, binary, directory):
                         candidate_path.unlink(missing_ok=True)
                     except OSError:
                         pass
+        _diagnostic(f"PROXY_DIAGNOSTIC stage=CANDIDATE_CHECK total={len(outbounds)} "
+                    f"valid={len(valid)} rejected={len(outbounds) - len(valid)}")
         if not valid:
             _proxy_fail()
+        stage = "GROUP_CONFIG"
         try:
             config, endpoints = build_proxy_config(valid)
             config_path = directory / "proxy-config.json"
             _write_config(config, config_path)
         except (OSError, TypeError, ValueError):
             _proxy_fail()
+        stage = "GROUP_CHECK"
+        _diagnostic("PROXY_DIAGNOSTIC stage=GROUP_CHECK")
         if not _check_config(binary, config_path):
             _proxy_fail()
+        stage = "PORT_RESERVE"
         if not _ports_available(endpoints):
             _proxy_fail()
+        stage = "PROCESS_SPAWN"
         try:
             child = subprocess.Popen(
                 [str(binary), "run", "-c", str(config_path)], shell=False,
@@ -895,17 +927,22 @@ def start_proxy(outbounds, binary, directory):
             _proxy_fail()
         deadline = time.monotonic() + START_TIMEOUT
         while True:
+            stage = "PROCESS_EXIT"
             if child.poll() is not None:
                 _proxy_fail()
+            stage = "PORT_READY"
             if _ports_ready(endpoints):
+                stage = "PROCESS_EXIT"
                 if child.poll() is not None:
                     _proxy_fail()
                 break
             if time.monotonic() >= deadline:
                 _proxy_fail()
             time.sleep(0.05)
+        _diagnostic("PROXY_DIAGNOSTIC stage=PROXY_READY")
         return child, endpoints
     except BaseException:
+        _diagnostic(f"PROXY_DIAGNOSTIC stage={stage} status=FAIL")
         _stop_child(child)
         raise
 

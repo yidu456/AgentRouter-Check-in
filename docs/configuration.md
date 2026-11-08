@@ -431,6 +431,32 @@ python -m unittest discover -s tests
 
 内核固定 Xray **26.1.23** 以兼容显式 `allowInsecure`；默认仍验证证书。显式 `1` 失去服务端身份验证，较新版本已移除该开关。该兼容版本不是最新安全基线，禁用 MPTCP 不代表所有后续修复已包含，也不开放受 Hy2/gRPC CA 固定问题影响的 CA 固定字段；长期应使用有效证书、删不安全选项后升级，不靠放宽校验或直连掩盖故障。
 
+### 登录任务的代理诊断
+
+`python app.py` 的新模式发生异常时，查看同一步中的安全日志，而不是仅看退出码或汇总的 `PROXY_START_FAIL`：
+
+```text
+PROXY_DIAGNOSTIC stage=CANDIDATE_CHECK candidate=1
+PROXY_DIAGNOSTIC stage=NATIVE_CHECK_REJECTED
+PROXY_DIAGNOSTIC stage=CANDIDATE_CHECK total=6 valid=0 rejected=6
+PROXY_DIAGNOSTIC stage=CANDIDATE_CHECK status=FAIL
+ISOLATED_DIAGNOSTIC phase=PROXY_START status=FAIL
+```
+
+| 阶段 | 含义 / 检查方向 |
+| --- | --- |
+| `BINARY_PLATFORM` / `BINARY_DOWNLOAD` | 不支持的平台/架构，或固定版本内核下载失败 |
+| `BINARY_HASH` / `BINARY_EXTRACT` / `BINARY_WRITE` | ZIP 哈希、可执行文件提取，或本地目录/写入权限失败；不放宽哈希检查 |
+| `CANDIDATE_CHECK` / `CANDIDATE_CONFIG_FAIL` | 按当前候选顺序逐个检查；`candidate` 从 1 起算，最终给 `total`/`valid`/`rejected`，不打印节点名称或链接 |
+| `GROUP_CONFIG` / `GROUP_CHECK` | 所有有效候选合并后的配置生成/写入或原生校验 |
+| `NATIVE_CHECK_REJECTED` / `NATIVE_CHECK_TIMEOUT` / `NATIVE_CHECK_EXEC_FAIL` | Xray 非零退出、校验超时，或校验进程无法执行；结合前面的候选序号或 `GROUP_CHECK` 判断范围，不输出原生 stdout/stderr |
+| `PORT_RESERVE` / `PROCESS_SPAWN` / `PROCESS_EXIT` / `PORT_READY` | 本地端口占用、进程创建失败、就绪前退出或本地代理就绪超时 |
+| `BINARY_READY` / `PROXY_READY` | 内核文件已就绪 / Xray 本地端口已就绪；不代表远端节点可用或登录成功 |
+
+`status=FAIL` 标出失败边界，不给原始异常、堆栈、配置、订阅 URL、UUID 或密码。`ISOLATED_DIAGNOSTIC` 另标外层阶段：`RUNTIME_DIR`、`BINARY_DOWNLOAD`、`PROXY_START`、`ACCOUNT_RUN`、`PROXY_STOP` 或 `RUNTIME_CLEANUP`。账号执行异常使尚未完成的行记为已有的 `UNEXPECTED`，不再误标 `PROXY_START_FAIL`；已完成的结果不覆盖。停止/清理异常仍会打印，但不改变已完成账号的结果。
+
+此改动只增加诊断，不改变随机分配、完整性检查、节点所有权或优先级。固定 `link` 和随机备用仍一起初始化后才依次尝试；备用不会借用其他账号的节点，也不会失败后直连。部署新版后新建运行才能看到新诊断，旧运行的底层故障不能由这些示例推断。
+
 ### 准备阶段的安全诊断
 
 `routing.py prepare` 失败仍返回退出码 1，并保留 `ROUTE_CONFIG_FAIL`，但后面新增 `PREPARE_DIAGNOSTIC`。它只输出已知字段位置、固定原因码和数字；不输出输入值、账号 ID、订阅/节点 URL、响应原文或异常堆栈。

@@ -2215,11 +2215,15 @@ def run_isolated_group(routes: list[dict], manifest_group: dict, result_path: Pa
         write_report(result_path, manifest_group, rows)
         return 1
     runtime_parent = os.environ.get("RUNNER_TEMP") or None
+    phase = "RUNTIME_DIR"
     try:
         with tempfile.TemporaryDirectory(prefix="checkin-proxy-", dir=runtime_parent) as directory:
             runtime_dir = Path(directory)
+            phase = "BINARY_DOWNLOAD"
             binary = download_binary(platform.system(), platform.machine(), runtime_dir)
+            phase = "PROXY_START"
             with group_proxy(outbounds, binary, runtime_dir) as endpoints:
+                phase = "ACCOUNT_RUN"
                 for row in rows:
                     account = by_id[row["id"]]
                     candidates = [{"server": endpoints[tag]} for tag in candidate_tags[row["id"]]
@@ -2234,10 +2238,16 @@ def run_isolated_group(routes: list[dict], manifest_group: dict, result_path: Pa
                         row["user_group"] = result["user_group"]
                     write_report(result_path, manifest_group, rows)
                     log(f"{row['id']}: {stage}")
+                phase = "PROXY_STOP"
+            phase = "RUNTIME_CLEANUP"
     except Exception:
+        try:
+            log(f"ISOLATED_DIAGNOSTIC phase={phase} status=FAIL")
+        except (OSError, ValueError):
+            pass
         for row in rows:
             if row["stage"] == "UNFINISHED":
-                row["stage"] = "PROXY_START_FAIL"
+                row["stage"] = "UNEXPECTED" if phase == "ACCOUNT_RUN" else "PROXY_START_FAIL"
         write_report(result_path, manifest_group, rows)
     return int(any(row["stage"] != "SUCCESS" for row in rows))
 
