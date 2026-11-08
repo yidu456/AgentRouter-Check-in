@@ -2275,6 +2275,16 @@ def _write_group_failure(group: dict, path: Path, stage: str) -> None:
                                for account_id in group["account_ids"]])
 
 
+def _log_random_failure(error):
+    from routing import format_diagnostic
+
+    try:
+        log("RANDOM_POOL_FAIL")
+        log(format_diagnostic(getattr(error, "diagnostic", None)).replace("PREPARE_DIAGNOSTIC", "RANDOM_DIAGNOSTIC", 1))
+    except (OSError, ValueError):
+        pass
+
+
 def main():
     from routing import RUNNERS, build_manifest, parse_config
 
@@ -2317,9 +2327,9 @@ def main():
                         raise ValueError("RANDOM_POOL_FAIL")
                     plan = json.loads(os.environ["RANDOM_PLAN"])
                     by_id = {a["id"]: a for a in _random_accounts(config, plan)}
-                except Exception:
+                except Exception as error:
                     _write_group_failure(group, Path(os.environ["RESULT_PATH"]), "RANDOM_POOL_FAIL")
-                    log("RANDOM_POOL_FAIL")
+                    _log_random_failure(error)
                     sys.exit(1)
             code = run_isolated_group([by_id[i] for i in group["account_ids"]], group,
                                       Path(os.environ["RESULT_PATH"]), config["subscription_url"])
@@ -2334,9 +2344,9 @@ def main():
             if has_random(config["accounts"]):
                 try:
                     by_id = {a["id"]: a for a in _random_accounts(config)}
-                except Exception:
+                except Exception as error:
                     random_failed = True
-                    log("RANDOM_POOL_FAIL")
+                    _log_random_failure(error)
             for group in manifest["groups"]:
                 result_dir = root / f"checkin-results-{group['group_id']}"
                 result_dir.mkdir()

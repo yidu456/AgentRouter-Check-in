@@ -127,7 +127,7 @@ class PrepareDiagnosticsTests(unittest.TestCase):
         self.assertIn("PREPARE_CONFIG_OK", output)
         code, output, _, _ = self.run_prepare(failure=requests.Timeout(SECRET))
         self.assertEqual(code, 1)
-        self.assertIn("reason=SUBSCRIPTION_REQUEST_FAIL", output)
+        self.assertIn("reason=SUBSCRIPTION_TIMEOUT", output)
 
     def test_json_subscription_and_all_rejected_nodes_have_distinct_reasons(self):
         code, output, _, _ = self.run_prepare(http=response('{"outbounds":[],"private":"' + SECRET + '"}'))
@@ -150,7 +150,7 @@ class PrepareDiagnosticsTests(unittest.TestCase):
         http.iter_content.side_effect = requests.Timeout(SECRET)
         code, output, _, _ = self.run_prepare(http=http)
         self.assertEqual(code, 1)
-        self.assertIn("reason=SUBSCRIPTION_READ_FAIL", output)
+        self.assertIn("reason=SUBSCRIPTION_TIMEOUT", output)
 
     def test_counts_cover_filtering_deduplication_fixed_exclusion_and_capacity(self):
         http = response("socks5://fixed.example.com:1080\n"

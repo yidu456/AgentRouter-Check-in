@@ -457,6 +457,27 @@ ISOLATED_DIAGNOSTIC phase=PROXY_START status=FAIL
 
 此改动只增加诊断，不改变随机分配、完整性检查、节点所有权或优先级。固定 `link` 和随机备用仍一起初始化后才依次尝试；备用不会借用其他账号的节点，也不会失败后直连。部署新版后新建运行才能看到新诊断，旧运行的底层故障不能由这些示例推断。
 
+随机方案校验发生在代理启动前。失败仍保留 `RANDOM_POOL_FAIL` 和失败报告，新增 `RANDOM_DIAGNOSTIC` 显示已有的安全原因：
+
+```text
+RANDOM_POOL_FAIL
+RANDOM_DIAGNOSTIC field=subscription_url reason=SUBSCRIPTION_HTTP_ERROR status=403
+RANDOM_DIAGNOSTIC field=random_plan reason=RANDOM_PLAN_MISMATCH
+PROXY_DIAGNOSTIC stage=BINARY_DOWNLOAD reason=BINARY_HTTP_ERROR status=429
+```
+
+这些是不同失败场景的示例，不表示同一次运行会全部出现。`RANDOM_DIAGNOSTIC` 复用准备阶段的字段/原因/数字白名单，未知异常只给 `INVALID`，不输出异常原文、订阅、账号、seed 或 fingerprint。新增原因：
+
+| 原因 | 含义 / 检查方向 |
+| --- | --- |
+| `RANDOM_PLAN_INVALID` | 随机计划结构不合法；seed/fingerprint 格式由程序校验，不需要手填 |
+| `RANDOM_PLAN_MISMATCH` | 本轮配置、固定节点绑定或有效节点池与准备阶段不一致；不能仅凭此码认定订阅变了，也不是 Chrome 指纹错误 |
+| `SUBSCRIPTION_TIMEOUT` | 可识别的订阅请求/读取超时；其他连接或流错误仍给 `SUBSCRIPTION_REQUEST_FAIL` / `SUBSCRIPTION_READ_FAIL` |
+| `POOL_TOO_SMALL` / `FIXED_LINK_INVALID` / `FIXED_NODE_MISSING` | 重建时的容量/固定绑定问题，保留原原因和安全计数，不再吞成统一原因 |
+| `BINARY_REQUEST_FAIL` / `BINARY_HTTP_ERROR` / `BINARY_TIMEOUT` / `BINARY_READ_FAIL` / `BINARY_TOO_LARGE` | Xray 获取压缩包时的请求、HTTP 状态、可识别超时、响应流或大小限制失败；HTTP 状态只允许整数 100～599 |
+
+不改变超时、重试或分配规则；不关闭完整性检查，不静默重新抽取、共享节点或直连。诊断输出为尽力写入，输出流关闭不会改变报告、校验或进程清理。
+
 ### 准备阶段的安全诊断
 
 `routing.py prepare` 失败仍返回退出码 1，并保留 `ROUTE_CONFIG_FAIL`，但后面新增 `PREPARE_DIAGNOSTIC`。它只输出已知字段位置、固定原因码和数字；不输出输入值、账号 ID、订阅/节点 URL、响应原文或异常堆栈。

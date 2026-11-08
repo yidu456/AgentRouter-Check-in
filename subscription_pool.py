@@ -32,7 +32,7 @@ def validate_plan(plan):
     if (not isinstance(plan, dict) or set(plan) != {"seed", "fingerprint"}
             or not isinstance(plan["seed"], str) or not _SEED.fullmatch(plan["seed"])
             or not isinstance(plan["fingerprint"], str) or not _FINGERPRINT.fullmatch(plan["fingerprint"])):
-        _fail()
+        _fail("RANDOM_PLAN_INVALID", "random_plan")
 
 
 def _host(value):
@@ -175,7 +175,9 @@ def load_pool(url, require_names=False, diagnostics=False):
         if str(error) == "RANDOM_POOL_FAIL":
             raise
         _fail(phase, **stats)
-    except Exception:
+    except Exception as error:
+        if phase in {"SUBSCRIPTION_REQUEST_FAIL", "SUBSCRIPTION_READ_FAIL"} and isinstance(error, requests.Timeout):
+            _fail("SUBSCRIPTION_TIMEOUT", **stats)
         _fail(phase, **stats)
     finally:
         if response is not None:
@@ -273,7 +275,7 @@ def resolve_random_accounts(config, plan, named_links, nodes):
         accounts, key, pool, reserved, eligible, fixed_routes = _context(config, named_links, nodes)
         expected = _fingerprint(plan["seed"], key, pool, reserved, fixed_routes)
         if not hmac.compare_digest(expected, plan["fingerprint"]):
-            _fail()
+            _fail("RANDOM_PLAN_MISMATCH", "random_plan")
         seed = bytes.fromhex(plan["seed"])
         ranked = sorted(eligible, key=lambda identity: (hmac.new(seed, identity, hashlib.sha256).digest(), identity))
         offset = 0
@@ -290,5 +292,9 @@ def resolve_random_accounts(config, plan, named_links, nodes):
                     candidates.append({"link": link})
             account["proxies"] = candidates
         return accounts
+    except ValueError as error:
+        if str(error) == "RANDOM_POOL_FAIL":
+            raise
+        _fail("POOL_PLAN_FAIL")
     except Exception:
-        _fail()
+        _fail("POOL_PLAN_FAIL")

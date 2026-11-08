@@ -578,18 +578,31 @@ def _normalize_machine(machine):
 
 
 def _archive_bytes(url):
-    response = requests.get(url, stream=True, timeout=30)
-    response.raise_for_status()
-    chunks = []
-    total = 0
-    for chunk in response.iter_content(64 * 1024):
-        if not chunk:
-            continue
-        total += len(chunk)
-        if total > MAX_ARCHIVE_SIZE:
-            _binary_fail()
-        chunks.append(chunk)
-    return b"".join(chunks)
+    phase, response = "BINARY_REQUEST_FAIL", None
+    try:
+        response = requests.get(url, stream=True, timeout=30)
+        phase = "BINARY_HTTP_ERROR"
+        response.raise_for_status()
+        phase = "BINARY_READ_FAIL"
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(64 * 1024):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > MAX_ARCHIVE_SIZE:
+                phase = "BINARY_TOO_LARGE"
+                _binary_fail()
+            chunks.append(chunk)
+        return b"".join(chunks)
+    except requests.Timeout:
+        _diagnostic("PROXY_DIAGNOSTIC stage=BINARY_DOWNLOAD reason=BINARY_TIMEOUT")
+        _binary_fail()
+    except Exception:
+        status = getattr(response, "status_code", None) if phase == "BINARY_HTTP_ERROR" else None
+        number = f" status={status}" if type(status) is int and 100 <= status <= 599 else ""
+        _diagnostic(f"PROXY_DIAGNOSTIC stage=BINARY_DOWNLOAD reason={phase}{number}")
+        _binary_fail()
 
 
 def _expected_member(asset):

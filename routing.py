@@ -46,11 +46,11 @@ DIAGNOSTIC_REASONS = set("""INVALID FIELDS_INVALID NONEMPTY_STRING URL_INVALID I
     SUBSCRIPTION_READ_FAIL SUBSCRIPTION_TOO_LARGE SUBSCRIPTION_FORMAT_INVALID SUBSCRIPTION_NO_VALID_NODES
     SUBSCRIPTION_DUPLICATE_NODE_NAME SUBSCRIPTION_CLOSE_FAIL POOL_INVALID POOL_STATS POOL_CAPACITY_STATS
     POOL_TOO_SMALL FIXED_LINK_INVALID FIXED_NODE_DUPLICATE FIXED_NODE_MISSING POOL_PLAN_FAIL
-    MANIFEST_WRITE_FAIL""".split())
+    MANIFEST_WRITE_FAIL SUBSCRIPTION_TIMEOUT RANDOM_PLAN_INVALID RANDOM_PLAN_MISMATCH""".split())
 DIAGNOSTIC_FIELDS = set("""config version subscription_url notifications telegram wecom bot_token chat_id
     webhook_url groups ubuntu macos windows accounts id username password os site proxies link node random
     profile viewport screen width height device_scale_factor locale timezone_id color_scheme api access_token
-    user_id manifest mode""".split())
+    user_id manifest mode random_plan""".split())
 DIAGNOSTIC_NUMBERS = ("status", "line", "column", "total", "valid", "rejected", "duplicate", "distinct",
                       "excluded", "available", "requested", "account_index", "proxy_index")
 

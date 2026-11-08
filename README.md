@@ -93,6 +93,8 @@ Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个�
 
 登录任务失败时，代理日志也只输出固定阶段码和候选计数。`NATIVE_CHECK_REJECTED` 表示 Xray 拒绝配置，`PORT_READY status=FAIL` 表示本地代理就绪超时；`ISOLATED_DIAGNOSTIC phase=ACCOUNT_RUN` 表示账号执行异常，不再误标为代理启动失败。`link` 和 `random` 仍一起初始化，再按配置顺序登录；此诊断改动不是“失败后才启动备用”的改造。
 
+`RANDOM_POOL_FAIL` 后看 `RANDOM_DIAGNOSTIC`：`SUBSCRIPTION_HTTP_ERROR status=403` 是订阅 HTTP 错误，`SUBSCRIPTION_TIMEOUT` 是可识别的请求/读取超时，`RANDOM_PLAN_MISMATCH` 是配置或有效节点与准备阶段不一致，并不等于浏览器指纹异常。Xray 下载另给 `BINARY_HTTP_ERROR`、`BINARY_TIMEOUT` 等原因；不打印 URL、密钥或响应，也不自动重新抽取来绕过校验。
+
 VLESS + WS + 普通 TLS 自动移除 `fp`、`ech` 后复用原解析器，保留 TLS/SNI/Host/路径/已有 Early Data；移除 ECH 会失去隐藏 TLS 服务名的保护。XHTTP 仍跳过，不转换成 WS；完整限制见配置手册第 6.1 节。
 
 ## 旧配置与本地验证
