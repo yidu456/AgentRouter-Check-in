@@ -78,6 +78,13 @@ class CountryLookupTests(unittest.TestCase):
 
 
 class UserGroupTests(unittest.TestCase):
+    def setUp(self):
+        for target, value in (("query_exit_ip", IP),
+                              ("query_country", {"name": "US", "code": "US", "timezone_id": "America/New_York"})):
+            mock = patch.object(observations, target, return_value=value)
+            mock.start()
+            self.addCleanup(mock.stop)
+
     def test_valid_groups_and_bad_metadata_do_not_replace_quota(self):
         for group in ("default", "vip-user", "用户分组", "vip_[x](link)"):
             with self.subTest(group=group):

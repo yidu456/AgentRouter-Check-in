@@ -2087,20 +2087,34 @@ def _safe_login_result(result: dict | None, stage: str) -> tuple:
 
 def checkin_assigned_account(account: dict, candidates: list[dict], profile: dict,
                              observations: dict | None = None) -> tuple:
+    from account_observations import query_exit_ip, query_country, safe_country, safe_timezone
+
     last_stage = "PROXY_LIST_EXHAUSTED"
     for attempt, candidate in enumerate(candidates, 1):
         if not candidate.get("server"):
             continue
+        ip, location = None, None
+        try:
+            ip = query_exit_ip(candidate)
+            if ip is not None:
+                location = query_country(ip, proxy=candidate, include_timezone=True)
+        except Exception:
+            pass
+        country = safe_country(location)
+        timezone = safe_timezone(location.get("timezone_id")) if isinstance(location, dict) else None
+        if observations is not None:
+            observations.update(exit_ip=ip, country=country, timezone_id=timezone)
+        if ip is None or country is None or timezone is None:
+            last_stage = "EXIT_IP_FAIL" if ip is None else "TIMEZONE_LOOKUP_FAIL"
+            log(f"{account.get('id', 'account')} attempt{attempt}: {last_stage}")
+            continue
+        effective_profile = dict(profile, timezone_id=timezone)
         try:
             result, stage = browser_login_complete(
-                account, proxy=candidate, profile=profile, isolated=True
+                account, proxy=candidate, profile=effective_profile, isolated=True
             )
         except Exception:
             result, stage = None, "UNEXPECTED"
-        if observations is not None:
-            from account_observations import query_exit_ip
-
-            observations["exit_ip"] = query_exit_ip(candidate)
         quota, last_stage = _safe_login_result(result, stage)
         if last_stage == "SUCCESS":
             from account_observations import safe_user_group
@@ -2215,6 +2229,7 @@ def run_isolated_group(routes: list[dict], manifest_group: dict, result_path: Pa
                                                             observations=observations)
                     quota, stage = _safe_login_result(result, stage)
                     row.update(quota=quota, stage=stage, exit_ip=observations.get("exit_ip"))
+                    row.update(country=observations.get("country"), timezone_id=observations.get("timezone_id"))
                     if result and "user_group" in result:
                         row["user_group"] = result["user_group"]
                     write_report(result_path, manifest_group, rows)

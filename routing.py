@@ -165,6 +165,10 @@ def _profile(value):
         "Asia/Tokyo",
         "America/New_York",
         "Europe/London",
+        "Asia/Singapore",
+        "Asia/Seoul",
+        "Europe/Berlin",
+        "Asia/Hong_Kong",
     }:
         _fail()
     if scheme not in {"light", "dark"}:

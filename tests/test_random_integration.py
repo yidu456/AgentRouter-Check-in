@@ -175,17 +175,19 @@ class RandomWorkerTests(unittest.TestCase):
             app.main()
         load.assert_not_called()
 
-    def test_selected_attempt_ip_is_observed_without_changing_login_result(self):
+    def test_ip_failure_skips_candidate_and_preserves_successful_observation(self):
         import account_observations
 
         candidates = [{"server": "http://127.0.0.1:18080"}, {"server": "http://127.0.0.1:18081"}]
         observations = {}
-        with patch.object(app, "browser_login_complete", side_effect=[
-                (None, "WAF_TIMEOUT"), ({"quota": 500000}, "SUCCESS")]), \
-                patch.object(account_observations, "query_exit_ip", side_effect=[None, "203.0.113.10"]) as probe:
+        with patch.object(app, "browser_login_complete", return_value=({"quota": 500000}, "SUCCESS")), \
+                patch.object(account_observations, "query_country", return_value={
+                    "name": "US", "code": "US", "timezone_id": "America/New_York"}), \
+                patch.object(account_observations, "query_exit_ip", side_effect=[None, "8.8.8.8"]) as probe:
             result = app.checkin_assigned_account({"id": "a01"}, candidates, {}, observations=observations)
         self.assertEqual(result, ({"quota": 500000}, "SUCCESS"))
-        self.assertEqual(observations, {"exit_ip": "203.0.113.10"})
+        self.assertEqual(observations, {"exit_ip": "8.8.8.8", "country": {"name": "US", "code": "US"},
+                                       "timezone_id": "America/New_York"})
         self.assertEqual([call.args[0] for call in probe.call_args_list], candidates)
 
 

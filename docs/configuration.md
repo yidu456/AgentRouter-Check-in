@@ -47,7 +47,7 @@
         {
           "id": "mac02", "username": "four@example.com", "password": "example-four",
           "proxies": [{"random": 2}],
-          "profile": {"locale": "en-US", "timezone_id": "Asia/Tokyo"}
+          "profile": {"locale": "en-US"}
         }
       ]
     },
@@ -62,7 +62,7 @@
           "id": "win02", "site": "https://agentrouter.org",
           "username": "six@example.com", "password": "example-six",
           "proxies": [{"link": "socks5://windows-second.example.com:1080#win02"}],
-          "profile": {"locale": "en-US", "timezone_id": "Europe/London"}
+          "profile": {"locale": "en-US"}
         }
       ]
     }
@@ -166,7 +166,7 @@ ID 会出现在清单、日志、报告和通知，不要用邮箱或密钥。�
 - 纯随机池允许无名、重名、改名、排序变化，跳过不支持/非法节点；订阅限明文/base64/base64url 链接列表，最大响应 4 MiB，带超时，不支持 Clash YAML/sing-box JSON。混有 `node` 时仍严格要求名称唯一且存在。
 - 固定绑定重复/无效、随机容量不足或准备后有效池/完整配置变化，安全失败，不登录、不重新抽、不共享、不直连；新运行才重新抽。固定名称改名不可忽略。清单只有种子/带密钥指纹，没有节点凭据；完整性指纹不是节点加密，也不保证每轮抽到不同节点。
 
-## 4. 固定 `profile`
+## 4. 基础 `profile` 与自动时区
 
 | 字段 | 类型 / 允许值 | 默认值 |
 | --- | --- | --- |
@@ -174,7 +174,7 @@ ID 会出现在清单、日志、报告和通知，不要用邮箱或密钥。�
 | `screen` | 同上，各维不能小于 viewport | 填了 viewport 则跟随；否则 1440 × 900 |
 | `device_scale_factor` | 严格整数 `1`/`2` | `1` |
 | `locale` | `zh-CN`/`en-US` | `zh-CN` |
-| `timezone_id` | `Asia/Shanghai`/`Asia/Tokyo`/`America/New_York`/`Europe/London` | `Asia/Shanghai` |
+| `timezone_id` | 建议省略；旧配置字段仍可解析，但登录时由出口检测结果覆盖 | 登录前自动检测 |
 | `color_scheme` | `light`/`dark` | `light` |
 
 完整局部例：
@@ -185,12 +185,18 @@ ID 会出现在清单、日志、报告和通知，不要用邮箱或密钥。�
     "viewport": {"width": 1280, "height": 720},
     "screen": {"width": 1920, "height": 1080},
     "device_scale_factor": 2, "locale": "en-US",
-    "timezone_id": "Europe/London", "color_scheme": "dark"
+    "color_scheme": "dark"
   }
 }
 ```
 
 只设置 1280 × 720 的 viewport 时，screen 也变为 1280 × 720。仅上述六项；不支持 `user_agent`、platform、浏览器版本、Canvas/WebGL、字体/硬件伪装。用原生系统 Playwright Chromium 默认 UA，不是 Google Chrome stable，也不在 Ubuntu 伪造 macOS；固定这些属性不等于固定完整硬件指纹或保证账号不可关联。
+
+**自动时区顺序：** 当前候选代理 → IPify 检测出口 IP → IPWHOIS 查询该 IP 的国家与 `timezone.id` → 校验 IANA 时区 → 新建浏览器环境 → 登录。两次请求均通过当前候选代理，单次超时 5 秒，禁止重定向和直连回退；只发送出口 IP，不发送账号凭据。无需 API 密钥，查询服务故障、限流或不能返回有效时区时跳过候选。切换固定或随机节点都会重新检测。
+
+按 IP 的具体时区设置，不能仅按国家映射：例如美国西部可能是 `America/Los_Angeles`，东部可能是 `America/New_York`；夏令时随时区数据库和浏览器规则处理。不修改语言、OS、Actions/Cloudflare 的定时设置。IP 定位并非权威，动态出口可能变化，也不保证消除账号关联。
+
+旧 `timezone_id` 允许 `Asia/Shanghai`、`Asia/Tokyo`、`America/New_York`、`Europe/London`、`Asia/Singapore`、`Asia/Seoul`、`Europe/Berlin`、`Asia/Hong_Kong`；它们只为兼容旧 JSON 保留，不覆盖自动检测。新模板直接省略此字段。本地依赖需包含 `tzdata`，为 Windows 等缺少系统 IANA 数据库的环境提供有效时区校验；工作流已安装。
 
 ## 5. 最终通知渠道
 
@@ -402,6 +408,7 @@ python -m unittest discover -s tests
 | 状态码 | 检查方向 |
 | --- | --- |
 | `ROUTE_CONFIG_FAIL`/`SCRIPT_FAIL` | JSON 类型、字段、重复绑定、系统或任务分配 |
+| `EXIT_IP_FAIL`/`TIMEZONE_LOOKUP_FAIL` | 登录前代理出口 IP／国家和有效时区查询失败；跳过当前节点，全部失败则不登录 |
 | `NODE_SOURCE_FAIL`/`NODE_MISSING` | 订阅读取/解码/重名/格式，引用名称缺失或不可用 |
 | `NODE_CONFIG_FAIL`/`PROXY_START_FAIL` | URI、协议组合/参数、原生检查/启动/端口/就绪 |
 | `BINARY_DOWNLOAD_FAIL`/`BROWSER_LAUNCH_FAIL` | 内核下载/哈希/平台/ZIP，或 Chromium 启动；不是必然节点故障 |
@@ -436,9 +443,9 @@ ubuntu-24.04 ubuntu01: 登录成功
 
 - 上次余额来自同账号**上次登录成功且读到有效余额的运行**，不是本次登录前实时余额；净变化以未舍入整数 quota 计算，500000 quota = 1 美元，显示两位小数。消费/充值/人工调整/其他客户端可能包含在差额内，不能称“签到奖励”；负变化如实显示，零余额合法。
 - 首次/缓存丢失、过期、清理/换分支/账号 ID、站点、用户名变更时基线未知，密码变更不改身份；登录失败或余额不可用不覆盖既有基线，当前余额“未获取”、变化“未知”，其他账号有效余额仍保存。Actions notify 使用按分支区分的缓存，本地默认 `.superpowers/checkin-history/balances.json`；只保存身份 SHA-256 摘要及整数 quota，不存原用户名、密码、API Token、节点、机器人密钥或 IP。摘要可关联猜测身份，缓存访问者能看到余额。
-- 出口 IP 经最后尝试/成功代理请求 `https://api.ipify.org` 并校验 IPv4/IPv6，带超时/限长、无重试/备用服务/重定向/直连；失败显示“未获取”且不影响有效登录。不是节点服务器/本地端口/runner 公网 IP；轮转或按目标分流可与目标站实际所见不同，不保证独立出口或防关联。
+- 新模式在每个候选登录前，经该代理请求 `https://api.ipify.org` 并校验 IPv4/IPv6；随后必须取得国家和有效时区才登录。失败跳过候选，换节点重查。报告保留最终尝试/成功节点的观测，不是节点服务器/本地端口/runner 公网 IP；轮转或按目标分流可与目标站实际所见不同，不保证独立出口或防关联。
 - Telegram HTML 和企业微信 Markdown 把有效 IP 链接到 `https://ippure.com/?ip=<URL编码IP>`，IPv4/IPv6 均支持，未获取不生成链接。Telegram 关闭网页预览；程序不主动打开定位页，但读者点击会向 IPPure 暴露 IP，其他客户端预览行为由客户端决定。
-- 最终汇总通过免费 `https://ipwho.is/<IP>` 查询 `success,ip,country,country_code`、`lang=zh-CN`，同 IP 本轮只查一次。无通知渠道/非公网保留 IP/非法、超时、限流、IP 不匹配均不查或显示“未获取”，不重试/换服务，不影响余额；只发送出口 IP、不发送账号/Cookie/凭据，禁用环境代理和重定向，5 秒连接/读取超时，最大 4 KiB。示例 `新加坡（SG）`，英文结果原样展示；免费额度当前每客户端 IP 每天 1000 次，共享 runner 可共同消耗，服务规则可能改变。
+- 新报告的国家/时区复用登录前通过代理取得的 `https://ipwho.is/<IP>` 结果，无通知渠道也必须检测；汇总不再查询或用另一结果覆盖它。兼容没有国家字段的旧报告时，才保留原来的同 IP 单次国家查询。请求无密钥、带超时和 4 KiB 限长，校验 IP 一致，禁止重定向；只发送出口 IP，不发送账号/Cookie/凭据。查询服务有免费限额，故障、限流、定位误差和规则变化会影响可用性。
 - 用户组来自登录站点 `/api/user/self` 的 `data.group`，不是执行组 `g01`；仅 1～64 个可打印字符，无首尾空白/换行/控制字符。缺失/非法显示“未获取”，不额外登录或查询；报告保存、消息转义，不存入余额缓存。
 - 完整 IP、用户组、余额进入短期结果 artifact 和通知，国家查询接收者也能看到 IP；artifact/cache 和机器人接收者可能看到活动信息，不是匿名数据。旧变量模式不新增历史/IP/国家查询；企业微信保留分段限速及发送隔离，文本发送函数默认行为不变。
 

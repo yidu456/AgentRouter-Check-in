@@ -224,12 +224,39 @@ def safe_user_group(value):
     return value
 
 
-def query_country(ip):
+def safe_timezone(value):
+    if (not isinstance(value, str) or not 1 <= len(value) <= 128
+            or re.fullmatch(r"[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)*", value) is None):
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+
+        ZoneInfo(value)
+        return value
+    except (KeyError, ValueError):
+        return None
+
+
+def safe_country(value):
+    if not isinstance(value, dict):
+        return None
+    name, code = value.get("name"), value.get("code")
+    if (not isinstance(name, str) or not 1 <= len(name) <= 80
+            or name != name.strip() or not name.isprintable()
+            or not isinstance(code, str) or re.fullmatch(r"[A-Z]{2}", code) is None):
+        return None
+    return {"name": name, "code": code}
+
+
+def query_country(ip, *, proxy=None, include_timezone=False):
     address = _canonical_ip(ip)
     if address is None:
         return None
     parsed = ipaddress.ip_address(address)
     if not parsed.is_global or parsed.is_multicast or parsed.is_reserved:
+        return None
+    server = _proxy_url(proxy) if proxy is not None else None
+    if (proxy is not None or include_timezone) and server is None:
         return None
     session = response = None
     try:
@@ -237,9 +264,11 @@ def query_country(ip):
 
         session = requests.Session()
         session.trust_env = False
+        options = {"proxies": {"http": server, "https": server}} if server else {}
+        fields = "success,ip,country,country_code" + (",timezone.id" if include_timezone else "")
         response = session.get(
             f"https://ipwho.is/{address}",
-            params={"fields": "success,ip,country,country_code", "lang": "zh-CN"},
+            params={"fields": fields, "lang": "zh-CN"}, **options,
             timeout=5, allow_redirects=False, stream=True,
         )
         if response.status_code != 200:
@@ -253,12 +282,16 @@ def query_country(ip):
         if (not isinstance(payload, dict) or payload.get("success") is not True
                 or _canonical_ip(payload.get("ip")) != address):
             return None
-        name, code = payload.get("country"), payload.get("country_code")
-        if (not isinstance(name, str) or not 1 <= len(name) <= 80
-                or name != name.strip() or not name.isprintable()
-                or not isinstance(code, str) or re.fullmatch(r"[A-Z]{2}", code) is None):
+        country = safe_country({"name": payload.get("country"), "code": payload.get("country_code")})
+        if country is None:
             return None
-        return {"name": name, "code": code}
+        if include_timezone:
+            timezone = payload.get("timezone")
+            timezone_id = safe_timezone(timezone.get("id")) if isinstance(timezone, dict) else None
+            if timezone_id is None:
+                return None
+            country["timezone_id"] = timezone_id
+        return country
     except Exception:
         return None
     finally:
@@ -275,6 +308,11 @@ def enrich_countries(rows):
     for label, detail, stage in rows:
         detail = copy.deepcopy(detail) if isinstance(detail, dict) else {}
         ip = _canonical_ip(detail.get("exit_ip"))
+        # New reports retain the pre-login observation, including failed lookups.
+        if "country" in detail:
+            detail["country"] = safe_country(detail["country"])
+            enriched.append((label, detail, stage))
+            continue
         if ip and ip not in cache:
             try:
                 cache[ip] = query_country(ip)

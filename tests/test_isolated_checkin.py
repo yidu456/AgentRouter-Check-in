@@ -10,6 +10,13 @@ from playwright.sync_api import Error as PlaywrightError
 
 
 class IsolatedCheckinTests(unittest.TestCase):
+    def setUp(self):
+        for target, value in (("query_exit_ip", "8.8.8.8"),
+                              ("query_country", {"name": "China", "code": "CN", "timezone_id": "Asia/Shanghai"})):
+            mock = patch(f"account_observations.{target}", return_value=value)
+            mock.start()
+            self.addCleanup(mock.stop)
+
     def worker_environment(self):
         config = {"version": 1, "accounts": [
             {"id": "a01", "site": "https://example.test", "username": "one", "password": "dummy-one",
@@ -69,7 +76,6 @@ class IsolatedCheckinTests(unittest.TestCase):
             with patch.object(proxy_runtime, "download_binary", return_value=Path("dummy")), \
                     patch.object(proxy_runtime, "group_proxy") as runtime, \
                     patch.object(proxy_runtime, "load_node_links") as subscription, \
-                    patch("account_observations.query_exit_ip", return_value=None), \
                     patch.object(app, "browser_login_complete", side_effect=[
                         (None, "WAF_TIMEOUT"), ({"quota": 500000}, "SUCCESS"),
                         ({"quota": 1000000}, "SUCCESS")]) as login, \
@@ -77,8 +83,10 @@ class IsolatedCheckinTests(unittest.TestCase):
                 runtime.return_value.__enter__.return_value = endpoints
                 self.assertEqual(app.run_isolated_group(routes, group, path), 0)
             self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["results"], [
-                {"id": "a01", "quota": 500000, "stage": "SUCCESS", "exit_ip": None},
-                {"id": "a02", "quota": 1000000, "stage": "SUCCESS", "exit_ip": None},
+                {"id": "a01", "quota": 500000, "stage": "SUCCESS", "exit_ip": "8.8.8.8",
+                 "country": {"name": "China", "code": "CN"}, "timezone_id": "Asia/Shanghai"},
+                {"id": "a02", "quota": 1000000, "stage": "SUCCESS", "exit_ip": "8.8.8.8",
+                 "country": {"name": "China", "code": "CN"}, "timezone_id": "Asia/Shanghai"},
             ])
         self.assertEqual([(call.args[0]["id"], call.kwargs["proxy"]["server"])
                           for call in login.call_args_list], [
@@ -132,7 +140,7 @@ class IsolatedCheckinTests(unittest.TestCase):
         pool.assert_not_called()
         self.assertEqual(result, ({"quota": 500000}, "SUCCESS"))
         self.assertEqual([c.kwargs["proxy"] for c in login.call_args_list], candidates[:2])
-        self.assertTrue(all(c.kwargs["profile"] == profile and c.kwargs["isolated"]
+        self.assertTrue(all(c.kwargs["profile"] == dict(profile, timezone_id="Asia/Shanghai") and c.kwargs["isolated"]
                             for c in login.call_args_list))
 
     def test_exhaustion_never_uses_global_or_direct(self):

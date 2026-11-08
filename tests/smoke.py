@@ -146,6 +146,18 @@ def check_browser_profile(endpoint):
             assert "Chrome/" in values.pop("ua"), "BROWSER_UA_MISMATCH"
             assert values == {"locale": "en-US", "timezone": "Europe/London", "viewport": [1280, 720],
                               "screen": [1920, 1080], "scale": 2, "dark": True}, "BROWSER_PROFILE_MISMATCH"
+            context.close()
+            for zone, offsets in (("Asia/Singapore", [-480, -480]), ("Asia/Seoul", [-540, -540]),
+                                  ("Asia/Tokyo", [-540, -540]), ("Europe/Berlin", [-60, -120]),
+                                  ("America/New_York", [300, 240]), ("Asia/Hong_Kong", [-480, -480])):
+                context = browser.new_context(**dict(profile, timezone_id=zone))
+                values = context.new_page().evaluate("""() => ({
+                    zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    offsets: ['2026-01-15T12:00:00Z', '2026-07-15T12:00:00Z']
+                        .map(value => new Date(value).getTimezoneOffset())
+                })""")
+                assert values == {"zone": zone, "offsets": offsets}, "BROWSER_TIMEZONE_MISMATCH"
+                context.close()
         finally:
             browser.close()
 
@@ -202,11 +214,14 @@ def main():
             assert group["os"] == RUNNERS[os_key]
             result_path = Path(directory) / "random-result.json"
             with patch("proxy_runtime.download_binary", return_value=binary), \
-                    patch("account_observations.query_exit_ip", return_value="203.0.113.10"):
+                    patch("account_observations.query_exit_ip", return_value="8.8.8.8"), \
+                    patch("account_observations.query_country", return_value={
+                        "name": "US", "code": "US", "timezone_id": "America/New_York"}):
                 assert app.run_isolated_group(routes, group, result_path) == 0, "RANDOM_GROUP_FAIL"
             random_result = json.loads(result_path.read_text(encoding="utf-8"))["results"][0]
             assert random_result == {"id": "random_smoke", "quota": 500000,
-                                     "stage": "SUCCESS", "exit_ip": "203.0.113.10", "user_group": "default"}
+                                     "stage": "SUCCESS", "exit_ip": "8.8.8.8", "user_group": "default",
+                                     "country": {"name": "US", "code": "US"}, "timezone_id": "America/New_York"}
             with group_proxy(outbounds, binary, Path(directory)) as endpoints:
                 endpoint = endpoints["a01_p01"]
                 check_browser_profile(endpoint)

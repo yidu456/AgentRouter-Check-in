@@ -38,6 +38,8 @@ FAILURE_STAGES = {
     "REPORT_INVALID",
     "PREPARE_FAIL",
     "RANDOM_POOL_FAIL",
+    "EXIT_IP_FAIL",
+    "TIMEZONE_LOOKUP_FAIL",
 }
 STAGES = FAILURE_STAGES | {"SUCCESS"}
 
@@ -125,7 +127,7 @@ def _validate_results(rows, expected_ids):
 
     seen = set()
     for row in rows:
-        if not isinstance(row, dict) or not RESULT_KEYS <= set(row) or set(row) - (RESULT_KEYS | {"exit_ip", "user_group"}):
+        if not isinstance(row, dict) or not RESULT_KEYS <= set(row) or set(row) - (RESULT_KEYS | {"exit_ip", "user_group", "country", "timezone_id"}):
             _invalid()
         account_id = row["id"]
         quota = row["quota"]
@@ -148,6 +150,13 @@ def _validate_results(rows, expected_ids):
 
             if safe_user_group(row["user_group"]) is None:
                 _invalid()
+        from account_observations import safe_country, safe_timezone
+
+        if row.get("country") is not None:
+            if safe_country(row["country"]) != row["country"]:
+                _invalid()
+        if row.get("timezone_id") is not None and safe_timezone(row["timezone_id"]) is None:
+            _invalid()
         exit_ip = row.get("exit_ip")
         if exit_ip is not None:
             if not isinstance(exit_ip, str) or len(exit_ip) > 45 or "%" in exit_ip:
@@ -171,7 +180,7 @@ def _safe_report(manifest_group, rows):
         "group_id": manifest_group["group_id"],
         "os": manifest_group["os"],
         "results": [
-            {key: row[key] for key in ("id", "quota", "stage", "exit_ip", "user_group") if key in row}
+            {key: row[key] for key in ("id", "quota", "stage", "exit_ip", "user_group", "country", "timezone_id") if key in row}
             for row in rows
         ],
     }
@@ -230,8 +239,10 @@ def combine_reports(manifest: dict, reports_dir: Path, details: bool = False) ->
                      {"quota": row["quota"], "balance": balance, "exit_ip": row.get("exit_ip")} if details else balance,
                      row["stage"])
                 )
-                if details and "user_group" in row:
-                    group_rows[-1][1]["user_group"] = row["user_group"]
+                if details:
+                    for key in ("user_group", "country", "timezone_id"):
+                        if key in row:
+                            group_rows[-1][1][key] = row[key]
         except Exception:
             group_rows = [
                 (f"{manifest_group['os']} {account_id}",

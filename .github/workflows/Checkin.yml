@@ -81,7 +81,7 @@ jobs:
       - name: Validate the assigned slot and runner
         run: python routing.py assign --manifest assignment/manifest.json --slot ${{ matrix.slot }} --runner ${{ matrix.os }}
       - name: Install dependencies
-        run: python -m pip install requests playwright==1.64.1 pynacl pysocks
+        run: python -m pip install requests playwright==1.64.1 pynacl pysocks tzdata
       - name: Cache Chromium
         id: browser-cache
         uses: actions/cache@v5

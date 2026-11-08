@@ -115,7 +115,10 @@ class LoginTruthfulnessTests(unittest.TestCase):
         self.assertEqual(call.args[1]["access_token"], "dummy-session-token")
 
     def test_candidate_stops_on_proven_login_without_balance(self):
-        with patch.object(app, "browser_login_complete", return_value=(
+        with patch("account_observations.query_exit_ip", return_value="8.8.8.8"), \
+                patch("account_observations.query_country", return_value={
+                    "name": "US", "code": "US", "timezone_id": "America/New_York"}), \
+                patch.object(app, "browser_login_complete", return_value=(
                 {"quota": None, "authenticated": True}, "SUCCESS")) as login:
             result = app.checkin_assigned_account({}, [{"server": "http://one"}, {"server": "http://two"}], {})
         self.assertEqual(result, ({"quota": None, "authenticated": True}, "SUCCESS"))
