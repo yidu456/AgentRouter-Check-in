@@ -291,7 +291,7 @@ test("fragments never log in or replace an existing independent login", async ()
 function textTree(item) { return [item.textContent, ...(item.children ?? []).map(textTree)].join(" "); }
 function hasAction(item, action) { return item.dataset?.action === action || item.children?.some(child => hasAction(child, action)); }
 
-test("three navigation sections separate operations diagnostics and repository-grouped history", async () => {
+test("navigation sections separate operations diagnostics and repository-grouped history", async () => {
     const second = { ...uiTarget, id: "secondary", ref: "dev" };
     const third = { ...uiTarget, id: "other", repository: "different/repo", error: "STORAGE_UNAVAILABLE" };
     const page = bootstrap(true, async () => Response.json({ status: "OK", targets: [uiTarget, second, third] }));
@@ -309,6 +309,23 @@ test("three navigation sections separate operations diagnostics and repository-g
     page.node('[data-view="logs"]').listeners.click();
     assert.equal(page.node('[data-section="repositories"]').hidden, true);
     assert.equal(page.node('[data-section="logs"]').hidden, false);
+});
+
+test("usage navigation is local, exclusive and leaves editor drafts unchanged", async () => {
+    const page = bootstrap(true, async () => targetReply(editableTarget));
+    await page.settle();
+    editField(page, "count", "3");
+    const calls = page.calls.length;
+    assert.equal(typeof page.node('[data-view="usage"]').listeners.click, "function");
+    page.node('[data-view="usage"]').listeners.click();
+    for (const view of ["repositories", "config", "logs", "usage"])
+        assert.equal(page.node(`[data-section="${view}"]`).hidden, view !== "usage");
+    assert.equal(page.node('[data-view="usage"]').attributes["aria-pressed"], "true");
+    assert.equal(page.node("[data-page-title]").textContent, "使用说明");
+    page.node('[data-view="repositories"]').listeners.click();
+    assert.equal(page.node('[data-section="usage"]').hidden, true);
+    assert.equal(field(page, "count").value, "3");
+    assert.equal(page.calls.length, calls, "Reading instructions must not fetch or save settings");
 });
 
 test("invalid JSON selects configuration section and shows safe repair advice", async () => {
@@ -459,7 +476,7 @@ test("repository page displays saved slots and distinguishes accepted unknown an
     const page = bootstrap(true, async () => Response.json({ status: "OK", targets: [target] }));
     await page.settle();
     const text = textTree(page.node("[data-targets]"));
-    assert.match(text, /已保存时段.*08:30.*GitHub 已受理.*13:00.*结果未知.*20:30.*已跳过/);
+    assert.match(text, /当前执行计划.*08:30.*GitHub 已受理.*13:00.*结果未知.*20:30.*已跳过/);
     assert.ok(!/已跳过.*成功触发/.test(text));
 });
 
@@ -648,7 +665,9 @@ test("effective schedules expose labeled mode-specific controls and independent 
     assert.equal(field(page, "interval").min, "1");
     assert.equal(field(page, "interval").max, "1440");
     assert.equal(field(page, "time"), undefined);
-    assert.match(textTree(page.node("[data-targets]")), /数据库设置.*60.*自动.*基线|数据库设置.*60.*上次自动/s);
+    const text = textTree(page.node("[data-targets]"));
+    assert.match(text, /自动最小间隔 60/);
+    assert.match(text, /来源：数据库设置.*上次自动尝试/);
     assert.ok(editorAction(page, "reset"));
     editField(page, "mode", "fixed");
     assert.equal(field(page, "count"), undefined);
@@ -688,7 +707,7 @@ test("save sends a revision-bound canonical payload with Cookie and CSRF and rep
     assert.equal(call.options.headers.Authorization, undefined);
     assert.deepEqual(JSON.parse(call.options.body), { binding: editableTarget.target_binding, revision: 4, schedule: saved.schedule });
     assert.equal(field(page, "count").value, "3");
-    assert.match(page.node("[data-feedback]").textContent, /已保存.*不.*运行|已保存.*未.*提交/);
+    assert.match(page.node("[data-feedback]").textContent, /已保存.*未触发运行/);
 });
 
 test("ordinary refresh preserves edit-start revision and conflict requires explicit saved-value loading", async () => {
@@ -847,16 +866,36 @@ test("rolled interval skip displays its prior date and cause alongside tomorrow 
         schedule_last: { date: "2026-11-09", at: "2026-11-09T01:00:00.000Z", result: "INTERVAL_SKIPPED" } };
     const page = bootstrap(true, async () => targetReply(target)); await page.settle();
     const text = textTree(page.node("[data-targets]"));
-    assert.match(text, /上次排期末时段.*2026-11-09.*09:00.*最小间隔未到.*不补发/);
-    assert.match(text, /已保存时段.*2026-11-10.*待执行/);
+    assert.match(text, /上一计划结果.*2026-11-09.*09:00.*最小间隔未到.*不补发/);
+    assert.match(text, /当前执行计划.*2026-11-10.*待执行/);
     assert.ok(!/GitHub 拒绝|成功触发/.test(text));
     assert.ok(editorAction(page, "save"));
+});
+
+test("replaced pending plan is hidden while current plan has separate date time and status columns", async () => {
+    const target = { ...editableTarget, schedule_date: "2026-11-11",
+        slots: [{ at: "2026-11-11T02:17:00.000Z", attempted: false, result: "PLANNED" }],
+        schedule_last: { date: "2026-11-11", at: "2026-11-11T05:35:00.000Z", result: "PLANNED" } };
+    const page = bootstrap(true, async () => targetReply(target)); await page.settle();
+    const text = textTree(page.node("[data-targets]"));
+    assert.ok(!text.includes("13:35"), "A superseded pending slot is not another upcoming trigger");
+    const tables = [];
+    const visit = item => {
+        if (item.className === "ar-plan-table") tables.push(item);
+        item.children?.forEach(visit);
+    };
+    visit(page.node("[data-targets]"));
+    assert.equal(tables.length, 1);
+    const caption = tables[0].children.find(item => item.tagName === "CAPTION");
+    assert.match(textTree(caption), /当前执行计划.*2026-11-11/);
+    assert.match(textTree(tables[0]), /时间.*状态.*10:17.*待执行/);
+    assert.ok(editorAction(page, "save"), "Valid legacy prior summary must not block editing");
 });
 
 test("prior plan summary accepts safe results without reclassifying unknown or missed attempts", async t => {
     for (const [result, status] of [["DISPATCH_ACCEPTED", /GitHub 已受理/], ["DISPATCH_UNKNOWN", /结果未知/],
         ["DISPATCH_HTTP_500", /GitHub 拒绝/], ["MISSED_DATE", /已跳过.*不补发/],
-        ["TARGET_CHANGED", /已跳过.*不补发/], ["PLANNED", /待执行/]]) await t.test(result, async () => {
+        ["TARGET_CHANGED", /已跳过.*不补发/]]) await t.test(result, async () => {
         const page = bootstrap(true, async () => targetReply({ ...editableTarget,
             schedule_last: { date: "2026-11-09", at: "2026-11-09T01:00:00.000Z", result } }));
         await page.settle();
