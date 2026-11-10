@@ -23,7 +23,10 @@ function fixture(t) {
             const values = new Map();
             let alarm = null, queue = Promise.resolve();
             const storage = { async get(k) { return structuredClone(values.get(k)); },
-                async put(k, v) { values.set(k, structuredClone(v)); }, async getAlarm() { return alarm; },
+                async put(k, v) {
+                    const batch = structuredClone(typeof k === "string" ? { [k]: v } : k);
+                    for (const [name, saved] of Object.entries(batch)) values.set(name, saved);
+                }, async getAlarm() { return alarm; },
                 async setAlarm(v) { alarm = v; }, async deleteAlarm() { alarm = null; } };
             const ctx = { storage, blockConcurrencyWhile(fn) { const p = queue.then(fn); queue = p.catch(() => {}); return p; } };
             objects.set(name, new TriggerSchedule(ctx, env));
@@ -99,5 +102,30 @@ test("session storage errors are safe503 and Basic compatibility does not depend
     assert.equal((await f.call("/api/admin/targets/a/enabled", { enabled: false }, { Authorization: credentials })).status, 200);
     f.env.DEBUG_ACCESS_TOKEN = "";
     assert.equal((await f.call("/api/admin/session", undefined, headers)).status, 404);
+    assert.equal(f.http.mock.callCount(), 0);
+});
+
+test("cookie schedule save and reset forward Origin/CSRF and reject stale revisions without dispatch", async t => {
+    const f = fixture(t), headers = await f.login();
+    const state = (await (await f.call("/api/admin/targets", undefined, headers)).json()).targets[0];
+    const body = { binding: state.target_binding, revision: 0, schedule: { mode: "fixed", times: ["10:00"] } };
+    for (const bad of [{ Cookie: headers.Cookie }, { ...headers, "X-CSRF-Token": "x".repeat(43) },
+        { ...headers, Origin: "https://evil.test" }]) {
+        assert.equal((await f.call("/api/admin/targets/a/schedule", body, bad)).status, 403);
+        assert.equal(f.stores.get("v1:a").values.has("schedule_settings"), false);
+    }
+    const saved = await f.call("/api/admin/targets/a/schedule", body, headers);
+    assert.equal(saved.status, 200);
+    assert.equal((await saved.json()).target.schedule_revision, 1);
+    const forwarded = f.internal.find(r => r.url.includes("/admin/schedule?"));
+    assert.equal(forwarded.headers.get("X-CSRF-Token"), headers["X-CSRF-Token"]);
+    assert.equal(forwarded.headers.get("Origin"), origin);
+    assert.equal((await f.call("/api/admin/targets/a/schedule", body, headers)).status, 409);
+    const restored = await f.call("/api/admin/targets/a/schedule/reset", { binding: body.binding, revision: 1 }, headers);
+    assert.equal(restored.status, 200);
+    const actual = (await restored.json()).target;
+    assert.equal(actual.schedule_source, "variable");
+    assert.equal(actual.schedule_revision, 2);
+    assert.deepEqual(actual.schedule, { mode: "fixed", times: ["09:00", "12:00"] });
     assert.equal(f.http.mock.callCount(), 0);
 });

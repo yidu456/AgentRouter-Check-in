@@ -20,7 +20,10 @@ function fixture(t, schedule = fixed, nowText = "2026-11-08T00:05:00+08:00") {
     let now = Date.parse(nowText), alarm = null;
     const values = new Map();
     const storage = { async get(k) { return structuredClone(values.get(k)); },
-        async put(k, v) { values.set(k, structuredClone(v)); }, async getAlarm() { return alarm; },
+        async put(k, v) {
+            const batch = structuredClone(typeof k === "string" ? { [k]: v } : k);
+            for (const [name, saved] of Object.entries(batch)) values.set(name, saved);
+        }, async getAlarm() { return alarm; },
         async setAlarm(at) { alarm = at; }, async deleteAlarm() { alarm = null; } };
     let queue = Promise.resolve();
     const ctx = { storage, blockConcurrencyWhile(fn) { const p = queue.then(fn); queue = p.catch(() => {}); return p; } };
@@ -125,7 +128,8 @@ test("failed post-HTTP save retains UNKNOWN and restarted callback cannot duplic
     f.setNow("2026-11-08T09:00:00+08:00");
     const put = f.storage.put;
     f.storage.put = async (k, v) => {
-        if (k === "plan" && v.slots[0].result === "DISPATCH_ACCEPTED") throw new Error("private_storage");
+        const plan = typeof k === "object" ? k.plan : k === "plan" ? v : null;
+        if (plan?.slots[0].result === "DISPATCH_ACCEPTED") throw new Error("private_storage");
         return put(k, v);
     };
     await assert.rejects(() => f.object.alarm());

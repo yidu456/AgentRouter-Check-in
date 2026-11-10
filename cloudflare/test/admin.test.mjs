@@ -18,7 +18,10 @@ function fixture(t, options = {}) {
     const values = new Map();
     const storage = {
         async get(key) { return structuredClone(values.get(key)); },
-        async put(key, value) { values.set(key, structuredClone(value)); },
+        async put(key, value) {
+            const batch = structuredClone(typeof key === "string" ? { [key]: value } : key);
+            for (const [name, saved] of Object.entries(batch)) values.set(name, saved);
+        },
         async delete(key) { return values.delete(key); },
         async getAlarm() { return alarm; },
         async setAlarm(at) { alarm = at; },
@@ -106,6 +109,9 @@ test("authenticated first read schedules enabled target without dispatch or repe
         workflow: "Checkin.yml", ref: "main", enabled: true, token_state: "configured",
         next_run: "2026-11-06T18:00:00.000Z", history: [], error: null,
         schedule: { mode: "random", count: 1, window: { start: "01:00", end: "23:00" } },
+        schedule_source: "variable", schedule_revision: 0,
+        target_binding: '["github_a","[\\"owner/repo\\",\\"Checkin.yml\\",\\"main\\"]"]',
+        automatic_state: "unknown", automatic_last_at: null, automatic_next_allowed_at: null,
         schedule_date: "2026-11-07", slots: [{ at: "2026-11-06T18:00:00.000Z", attempted: false, result: "PLANNED" }] }] });
     const plan = structuredClone(f.values.get("plan"));
     assert.equal(f.alarm(), plan.slots[0].at);
@@ -426,21 +432,26 @@ test("manual crash after bot send preserves dispatch acceptance with unknown not
     assert.equal(f.http.mock.callCount(), 2);
 });
 
-test("failed automatic history write leaves attempted plan and cannot send on later callback", async (t) => {
+test("failed atomic automatic history write leaves all records unchanged and permits one later attempt", async (t) => {
     const f = fixture(t);
     await f.init();
     f.setNow("2026-11-07T02:00:00+08:00");
     const put = f.storage.put;
     f.storage.put = async (key, value) => {
-        if (key === "history") throw new Error("private_disk");
+        const batch = typeof key === "object" ? key : { [key]: value };
+        if (batch.history) throw new Error("private_disk");
         return put(key, value);
     };
     await assert.rejects(() => f.object.alarm());
-    assert.equal(f.values.get("plan").slots[0].attempted, true);
-    assert.equal(f.values.get("plan").slots[0].result, "DISPATCH_UNKNOWN");
+    assert.equal(f.values.get("plan").slots[0].attempted, false);
+    assert.equal(f.values.get("plan").slots[0].result, "PLANNED");
+    assert.equal(f.values.has("automatic_guard"), false);
+    assert.equal(f.values.has("history"), false);
+    assert.equal(f.http.mock.callCount(), 0);
     f.storage.put = put;
     await new TriggerSchedule(f.ctx, f.env).alarm();
-    assert.equal(f.http.mock.callCount(), 0);
+    await new TriggerSchedule(f.ctx, f.env).alarm();
+    assert.equal(f.http.mock.callCount(), 1);
 });
 
 test("malformed stored known fields cannot expose private exception text or retry HTTP", async (t) => {

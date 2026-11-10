@@ -1,9 +1,10 @@
-import { parseConfig, targetBinding, tokenFor } from "./config.mjs";
+import { parseConfig, targetBinding, tokenFor, intervalMinutes, scheduleFor } from "./config.mjs";
 import { statusResponse } from "./status.mjs";
 import { sendTriggerNotification } from "./wecom.mjs";
 import { adminResponse, adminGate, adminJson, mutationBody, targetState, UUID, basicAuthorized, adminState, loginState } from "./admin.mjs";
 import { sessionStorageResponse } from "./sessions.mjs";
 import { DAY, localDate, validPlan, planBinding, samePlanTarget, pendingSlot, migratePlan, createPlan } from "./scheduling.mjs";
+import { settingsBinding, validSettings, validGuard, effectiveTarget, settingsState } from "./schedule-settings.mjs";
 export { parseConfig } from "./config.mjs";
 export { randomMinute } from "./scheduling.mjs";
 
@@ -28,14 +29,14 @@ function validControl(control) {
 }
 function validHistory(history) {
     return exactKeys(history, ["version", "items"]) && history.version === 1 && Array.isArray(history.items)
-        && history.items.length <= 20 && history.items.every(validRecord)
+        && history.items.length <= 20 && [...history.items].every(validRecord)
         && new Set(history.items.map((record) => record.id)).size === history.items.length;
 }
 function validReceipts(receipts) {
     return exactKeys(receipts, ["version", "items", "last_at"]) && receipts.version === 1
         && Number.isSafeInteger(receipts.last_at) && receipts.last_at >= 0 && receipts.last_at <= 8_640_000_000_000_000
         && Array.isArray(receipts.items)
-        && receipts.items.length <= 100 && receipts.items.every((item) => exactKeys(item, ["binding", "record"])
+        && receipts.items.length <= 100 && [...receipts.items].every((item) => exactKeys(item, ["binding", "record"])
             && typeof item.binding === "string" && item.binding.length <= 1024
             && validRecord(item.record) && item.record.source === "manual")
         && new Set(receipts.items.map((item) => item.record.id)).size === receipts.items.length;
@@ -63,7 +64,7 @@ export class TriggerSchedule {
             if (denied) return denied;
             const action = url.pathname.slice(7);
             const listing = action === "state" && request.method === "GET";
-            if (!listing && (request.method !== "POST" || !["enabled", "run", "logs/delete", "logs/clear"].includes(action)))
+            if (!listing && (request.method !== "POST" || !["enabled", "run", "logs/delete", "logs/clear", "schedule", "schedule/reset"].includes(action)))
                 return adminJson({ status: "NOT_FOUND" }, 404);
             const body = listing ? null : await mutationBody(request, action);
             if (body instanceof Response) return body;
@@ -73,16 +74,19 @@ export class TriggerSchedule {
                 catch { return adminJson({ status: "CONFIG_INVALID" }, 503); }
                 if (!target) return adminJson({ status: "TARGET_NOT_FOUND" }, 404);
                 try {
-                    let state = await this.snapshot();
+                    // Settings requests defer legacy guard persistence until the revision-bound commit.
+                    let state = await this.snapshot(target, !["schedule", "schedule/reset"].includes(action));
                     if (listing) {
-                        if (this.enabled(target, state.control) && tokenFor(target, this.env)
-                                && (!state.plan || state.plan.version === 1 || state.plan.binding !== planBinding(target))) {
+                        const effective = effectiveTarget(target, state.settings);
+                        const active = this.enabled(effective, state.control) && tokenFor(effective, this.env);
+                        if (!active) {
+                            if (await this.ctx.storage.getAlarm() !== null) await this.ctx.storage.deleteAlarm();
+                        } else if (!state.plan || state.plan.version === 1 || state.plan.binding !== planBinding(effective)) {
                             await this.initialize(target);
-                            state = await this.snapshot();
-                        } else if (state.plan && this.enabled(target, state.control) && tokenFor(target, this.env)
-                                && state.plan.id === target.id && state.plan.binding === planBinding(target)) {
+                            state = await this.snapshot(target);
+                        } else if (state.plan.id === target.id && state.plan.binding === planBinding(effective)) {
                             const slot = pendingSlot(state.plan, Date.now());
-                            if (slot && await this.ctx.storage.getAlarm() === null) await this.ctx.storage.setAlarm(slot.at);
+                            if (slot && await this.ctx.storage.getAlarm() !== slot.at) await this.ctx.storage.setAlarm(slot.at);
                         }
                         return adminJson(this.describe(target, state));
                     }
@@ -103,14 +107,29 @@ export class TriggerSchedule {
         });
     }
 
-    async snapshot() {
-        const [control, history, receipts, plan] = await Promise.all(["control", "history", "receipts", "plan"]
+    async snapshot(target, persistGuard = true) {
+        const [control, history, receipts, plan, settings, savedGuard] = await Promise.all(["control", "history", "receipts", "plan", "schedule_settings", "automatic_guard"]
             .map((key) => this.ctx.storage.get(key)));
         if (control !== undefined && !validControl(control) || history !== undefined && !validHistory(history)
-                || receipts !== undefined && !validReceipts(receipts) || plan !== undefined && !validPlan(plan))
+                || receipts !== undefined && !validReceipts(receipts) || plan !== undefined && !validPlan(plan)
+                || settings !== undefined && !validSettings(settings) || savedGuard !== undefined && !validGuard(savedGuard)) {
+            await this.ctx.storage.deleteAlarm();
             throw new Error("STATE_INVALID");
+        }
+        let guard = savedGuard;
+        if (!guard && target && plan && samePlanTarget(plan, target)) {
+            const slots = plan.version === 1 ? [plan] : plan.slots;
+            const linked = history?.items.filter(record => record.source === "automatic"
+                && slots.some(slot => slot.attempted && slot.history_id === record.id
+                    && /^DISPATCH_/.test(slot.result)));
+            if (linked?.length) {
+                guard = { version: 1, binding: settingsBinding(target), last_at: Math.max(...linked.map(record => record.at)) };
+                if (persistGuard) await this.ctx.storage.put("automatic_guard", guard);
+            }
+        }
         return { control, history: history ?? { version: 1, items: [] },
-            receipts: receipts ?? { version: 1, items: [], last_at: 0 }, plan };
+            receipts: receipts ?? { version: 1, items: [], last_at: 0 }, plan, settings, guard,
+            guardRecovered: guard !== savedGuard };
     }
 
     enabled(target, control) {
@@ -118,12 +137,23 @@ export class TriggerSchedule {
     }
 
     describe(target, state) {
+        const metadata = settingsState(target, state.settings);
+        target = effectiveTarget(target, state.settings);
         const summary = targetState(target, this.env);
+        Object.assign(summary, metadata);
+        if (state.guard?.binding === settingsBinding(target)) {
+            summary.automatic_state = "known";
+            summary.automatic_last_at = new Date(state.guard.last_at).toISOString();
+            const next = state.guard.last_at + intervalMinutes(scheduleFor(target)) * 60_000;
+            summary.automatic_next_allowed_at = next <= 8_640_000_000_000_000 ? new Date(next).toISOString() : null;
+        }
         summary.enabled = this.enabled(target, state.control);
         const plan = state.plan;
         if (plan?.version === 2 && plan.id === target.id && plan.binding === planBinding(target)) {
             summary.schedule_date = plan.date;
             summary.slots = plan.slots.map(slot => ({ at: new Date(slot.at).toISOString(), attempted: slot.attempted, result: slot.result }));
+            // Final-slot skips have no dispatch history; keep their reason visible after rollover.
+            if (plan.last) summary.schedule_last = { date: plan.last.date, at: new Date(plan.last.at).toISOString(), result: plan.last.result };
             const slot = pendingSlot(plan, Date.now());
             if (summary.enabled && summary.token_state === "configured" && slot)
                 summary.next_run = new Date(slot.at).toISOString();
@@ -133,7 +163,9 @@ export class TriggerSchedule {
     }
 
     async initialize(target, reopening = false, arm = true) {
-        let plan = await this.readPlan();
+        const state = await this.snapshot(target);
+        target = effectiveTarget(target, state.settings);
+        let plan = state.plan;
         const now = Date.now();
         if (plan?.version === 1) {
             plan = migratePlan(plan, target);
@@ -153,6 +185,29 @@ export class TriggerSchedule {
     }
 
     async mutate(target, state, action, body) {
+        if (action === "schedule" || action === "schedule/reset") {
+            const metadata = settingsState(target, state.settings);
+            if (body.binding !== metadata.target_binding) return adminJson({ status: "TARGET_CHANGED" }, 409);
+            if (body.revision !== metadata.schedule_revision) return adminJson({ status: "SCHEDULE_CONFLICT" }, 409);
+            if (metadata.schedule_revision === Number.MAX_SAFE_INTEGER)
+                return adminJson({ status: "SCHEDULE_REVISION_LIMIT" }, 429);
+            const settings = { version: 1, binding: metadata.target_binding, revision: metadata.schedule_revision + 1,
+                schedule: action === "schedule" ? body.schedule : null };
+            const effective = effectiveTarget(target, settings), now = Date.now();
+            let plan = state.plan;
+            if (plan?.version === 1) plan = migratePlan(plan, effective);
+            if (!plan || plan.id !== effective.id || plan.binding !== planBinding(effective) || !pendingSlot(plan, now))
+                plan = createPlan(effective, plan, now);
+            // Commit override and its plan together; Alarm repair must reuse these exact times.
+            await this.ctx.storage.put({ schedule_settings: settings, plan,
+                ...(state.guardRecovered ? { automatic_guard: state.guard } : {}) });
+            const slot = pendingSlot(plan, now);
+            if (this.enabled(effective, state.control) && tokenFor(effective, this.env) && slot)
+                await this.ctx.storage.setAlarm(slot.at);
+            else await this.ctx.storage.deleteAlarm();
+            return adminJson({ status: action === "schedule" ? "SCHEDULE_UPDATED" : "SCHEDULE_RESET",
+                target: this.describe(target, { ...state, settings, plan }) });
+        }
         if (action === "enabled") {
             const wasEnabled = this.enabled(target, state.control);
             // Prepare skipped/replanned state while paused so a failed reopen cannot permit catch-up.
@@ -163,7 +218,7 @@ export class TriggerSchedule {
                 const selected = await this.select(target.id);
                 if (selected) await this.initialize(target);
             }
-            return adminJson({ status: "ENABLED_UPDATED", target: this.describe(target, await this.snapshot()) });
+            return adminJson({ status: "ENABLED_UPDATED", target: this.describe(target, await this.snapshot(target)) });
         }
         if (action === "logs/delete" || action === "logs/clear") {
             if (action === "logs/delete") {
@@ -174,6 +229,7 @@ export class TriggerSchedule {
             await this.ctx.storage.put("history", state.history);
             return adminJson({ status: action === "logs/delete" ? "HISTORY_DELETED" : "HISTORY_CLEARED" });
         }
+        target = effectiveTarget(target, state.settings);
         const now = Date.now();
         const id = body.request_id.toLowerCase();
         const receipts = state.receipts;
@@ -232,12 +288,9 @@ export class TriggerSchedule {
             target = parseConfig(this.env.TRIGGER_CONFIG).find((item) => item.id === id);
         } catch { reason = "CONFIG_INVALID"; }
         if (target) {
-            const control = await this.ctx.storage.get("control");
-            if (control !== undefined && !validControl(control)) {
-                await this.ctx.storage.deleteAlarm();
-                throw new Error("STATE_INVALID");
-            }
-            reason = !this.enabled(target, control) ? "TARGET_DISABLED"
+            const state = await this.snapshot(target);
+            target = effectiveTarget(target, state.settings);
+            reason = !this.enabled(target, state.control) ? "TARGET_DISABLED"
                 : !tokenFor(target, this.env) ? "TOKEN_MISSING" : null;
         } else reason ??= "TARGET_REMOVED";
         if (reason) {
@@ -298,16 +351,25 @@ export class TriggerSchedule {
             const due = plan.slots.filter(slot => !slot.attempted && slot.at <= now);
             for (const slot of due.slice(0, -1)) await this.finish(plan, "MISSED_DATE", slot);
             const slot = due.at(-1);
-            const history = await this.ctx.storage.get("history") ?? { version: 1, items: [] };
-            if (!validHistory(history)) throw new Error("STATE_INVALID");
-            const record = { id: crypto.randomUUID(), at: now, source: "automatic",
+            const state = await this.snapshot(target), attemptedAt = Date.now();
+            const guard = state.guard?.binding === settingsBinding(target) ? state.guard : null;
+            if (guard && attemptedAt < guard.last_at + intervalMinutes(scheduleFor(target)) * 60_000) {
+                await this.finish(plan, "INTERVAL_SKIPPED", slot);
+                if (pendingSlot(plan)) await this.ctx.storage.setAlarm(pendingSlot(plan).at);
+                else await this.planNext(target, plan, Date.now(), true);
+                return;
+            }
+            const checkpoint = { version: 1, binding: settingsBinding(target), last_at: attemptedAt };
+            const record = { id: crypto.randomUUID(), at: attemptedAt, source: "automatic",
                 result: "DISPATCH_UNKNOWN", notification: "NOTIFY_UNKNOWN" };
             await this.dispatch(target, token, record, async (value) => {
                 slot.history_id = value.id;
                 slot.notification = value.notification;
-                await this.finish(plan, value.result, slot);
-                updateHistory(history, value);
-                await this.ctx.storage.put("history", history);
+                slot.attempted = true;
+                slot.result = value.result;
+                updateHistory(state.history, value);
+                await this.ctx.storage.put({ plan, automatic_guard: checkpoint, history: state.history });
+                logResult(plan.id, plan.date, value.result);
             }, plan.date);
             if (pendingSlot(plan)) await this.ctx.storage.setAlarm(pendingSlot(plan).at);
             else await this.planNext(target, plan, Date.now(), true);

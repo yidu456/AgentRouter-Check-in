@@ -1,4 +1,4 @@
-import { parseConfig, tokenFor, scheduleFor } from "./config.mjs";
+import { parseConfig, tokenFor, scheduleFor, normalizeSchedule } from "./config.mjs";
 import { adminClient } from "./admin-ui.mjs";
 import { sessionApiResponse, sessionAuthorized } from "./sessions.mjs";
 
@@ -91,6 +91,19 @@ export async function mutationBody(request, action) {
         body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size)));
     } catch { return adminJson({ status: "BODY_INVALID" }, 400); }
     finally { reader.releaseLock(); }
+    if (action === "schedule" || action === "schedule/reset") {
+        const keys = action === "schedule" ? ["binding", "revision", "schedule"] : ["binding", "revision"];
+        if (!body || typeof body !== "object" || Array.isArray(body)
+            || Object.keys(body).length !== keys.length || !keys.every(key => Object.hasOwn(body, key))
+            || typeof body.binding !== "string" || body.binding.length > 1024
+            || !Number.isSafeInteger(body.revision) || body.revision < 0)
+            return adminJson({ status: "BODY_INVALID" }, 400);
+        if (action === "schedule") {
+            try { body.schedule = normalizeSchedule(body.schedule); }
+            catch (error) { return adminJson({ status: "SCHEDULE_INVALID", error: error.diagnostic }, 400); }
+        }
+        return body;
+    }
     const fields = { enabled: "enabled", run: "request_id", "logs/delete": "log_id", "logs/clear": null };
     const field = fields[action];
     const valid = body && typeof body === "object" && !Array.isArray(body)
@@ -105,7 +118,9 @@ export function targetState(target, env) {
     return { id: target.id, repository: target.repository, workflow: target.workflow, ref: target.ref,
         enabled: target.enabled, token_state: tokenFor(target, env) ? "configured"
             : env[target.token_secret] === undefined || env[target.token_secret] === "" ? "missing" : "invalid",
-        next_run: null, history: [], error: null, schedule: scheduleFor(target), schedule_date: null, slots: [] };
+        next_run: null, history: [], error: null, schedule: scheduleFor(target), schedule_date: null, slots: [],
+        schedule_source: null, schedule_revision: null, target_binding: null,
+        automatic_state: "unknown", automatic_last_at: null, automatic_next_allowed_at: null };
 }
 
 export async function adminResponse(request, env) {
@@ -129,7 +144,7 @@ export async function adminResponse(request, env) {
     const denied = await adminGate(request, env);
     if (denied) return denied;
     const listing = request.method === "GET" && url.pathname === "/api/admin/targets";
-    const match = /^\/api\/admin\/targets\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/(enabled|run|logs\/delete|logs\/clear)$/.exec(url.pathname);
+    const match = /^\/api\/admin\/targets\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/(enabled|run|logs\/delete|logs\/clear|schedule(?:\/reset)?)$/.exec(url.pathname);
     if (!listing && (request.method !== "POST" || !match)) return adminJson({ status: "NOT_FOUND" }, 404);
     let body;
     if (!listing) {

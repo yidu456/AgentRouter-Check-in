@@ -53,7 +53,10 @@ function bootstrap(autoLogin, handler, customHealth = false, hash = "", sessionH
         history: { state: null, replaceState(_state, _title, url) {
             calls.push({ erased: true, url }); location.hash = "";
         } },
-        document: { querySelector: node, createElement: (tag) => ({ ...node("element-" + tag + "-" + nodes.size), tagName: tag.toUpperCase() }) },
+        document: { querySelector: node, getElementById: id => {
+            const visit = item => item.id === id ? item : item.children?.map(visit).find(Boolean);
+            return [...nodes.values()].map(visit).find(Boolean);
+        }, createElement: (tag) => ({ ...node("element-" + tag + "-" + nodes.size), tagName: tag.toUpperCase() }) },
         addEventListener(name, fn) { listeners[name] = fn; },
         crypto: { randomUUID: () => "00000000-0000-4000-8000-" + String(++sequence).padStart(12, "0") },
         fetch: async (url, options) => {
@@ -612,4 +615,395 @@ test("fixed list length failures get list advice rather than random count and wi
         assert.match(advice, /固定.*1.*24.*HH:mm/);
         assert.ok(!/整数|窗口/.test(advice));
     });
+});
+
+const editableTarget = { ...uiTarget, schedule: { mode: "random", count: 2, window: { start: "09:00", end: "22:00" }, min_interval_minutes: 60 },
+    schedule_source: "database", schedule_revision: 4,
+    target_binding: '["primary","[\\"fixture/team\\",\\"Checkin.yml\\",\\"main\\"]"]',
+    automatic_state: "known", automatic_last_at: "2026-11-10T01:00:00.000Z", automatic_next_allowed_at: "2026-11-10T02:00:00.000Z" };
+function findEditor(page, key, value) {
+    const visit = item => item.dataset?.[key] === value ? item : item.children?.map(visit).find(Boolean);
+    return page.node("[data-targets]").children.map(visit).find(Boolean);
+}
+const field = (page, name) => findEditor(page, "scheduleField", name);
+const editorAction = (page, name) => findEditor(page, "action", "schedule-" + name);
+function editField(page, name, value) {
+    const input = field(page, name);
+    assert.ok(input, "Labeled editor field must exist: " + name);
+    input.value = value;
+    input.listeners[name === "mode" ? "change" : "input"]();
+}
+function submitSchedule(page) {
+    const form = findEditor(page, "scheduleForm", "primary");
+    assert.ok(form, "Schedule form must exist");
+    form.listeners.submit({ preventDefault() {} });
+}
+const targetReply = target => Response.json({ status: "OK", targets: [target] });
+
+test("effective schedules expose labeled mode-specific controls and independent interval checkpoints", async () => {
+    const page = bootstrap(true, async () => targetReply(editableTarget));
+    await page.settle();
+    for (const name of ["mode", "count", "start", "end", "interval"]) assert.ok(field(page, name), name);
+    assert.equal(field(page, "start").type, "time");
+    assert.equal(field(page, "interval").min, "1");
+    assert.equal(field(page, "interval").max, "1440");
+    assert.equal(field(page, "time"), undefined);
+    assert.match(textTree(page.node("[data-targets]")), /数据库设置.*60.*自动.*基线|数据库设置.*60.*上次自动/s);
+    assert.ok(editorAction(page, "reset"));
+    editField(page, "mode", "fixed");
+    assert.equal(field(page, "count"), undefined);
+    assert.ok(field(page, "time"));
+    assert.equal(field(page, "start"), undefined);
+});
+
+test("fixed add and delete derive daily count without submitting unrelated mode fields", async () => {
+    const target = { ...editableTarget, schedule: { mode: "fixed", times: ["20:30"], min_interval_minutes: 60 } };
+    const page = bootstrap(true, async (_url, options) => options.method === "GET" ? targetReply(target)
+        : Response.json({ status: "SCHEDULE_INVALID", error: { field: "schedule.times", code: "SCHEDULE_TIME" } }, { status: 400 }));
+    await page.settle();
+    editorAction(page, "add").listeners.click();
+    assert.match(textTree(page.node("[data-targets]")), /2 次\/天/);
+    editorAction(page, "remove").listeners.click();
+    assert.match(textTree(page.node("[data-targets]")), /1 次\/天/);
+    editField(page, "time", "08:30");
+    submitSchedule(page);
+    await page.settle();
+    const call = page.calls.find(call => call.url.endsWith("/schedule"));
+    assert.deepEqual(JSON.parse(call.options.body), { binding: target.target_binding, revision: 4,
+        schedule: { mode: "fixed", times: ["08:30"], min_interval_minutes: 60 } });
+});
+
+test("save sends a revision-bound canonical payload with Cookie and CSRF and replaces effective state", async () => {
+    const saved = { ...editableTarget, schedule_revision: 5,
+        schedule: { mode: "random", count: 3, window: { start: "08:00", end: "21:00" } } };
+    const page = bootstrap(true, async (_url, options) => options.method === "GET" ? targetReply(editableTarget)
+        : Response.json({ status: "SCHEDULE_UPDATED", target: saved }));
+    await page.settle();
+    editField(page, "count", "3"); editField(page, "start", "08:00"); editField(page, "end", "21:00"); editField(page, "interval", "1");
+    submitSchedule(page);
+    await page.settle();
+    const call = page.calls.find(call => call.url.endsWith("/schedule"));
+    assert.equal(call.options.credentials, "same-origin");
+    assert.equal(call.options.headers["X-CSRF-Token"], sessionData().csrf_token);
+    assert.equal(call.options.headers.Authorization, undefined);
+    assert.deepEqual(JSON.parse(call.options.body), { binding: editableTarget.target_binding, revision: 4, schedule: saved.schedule });
+    assert.equal(field(page, "count").value, "3");
+    assert.match(page.node("[data-feedback]").textContent, /已保存.*不.*运行|已保存.*未.*提交/);
+});
+
+test("ordinary refresh preserves edit-start revision and conflict requires explicit saved-value loading", async () => {
+    let server = editableTarget;
+    const page = bootstrap(true, async (_url, options) => options.method === "GET" ? targetReply(server)
+        : Response.json({ status: "SCHEDULE_CONFLICT" }, { status: 409 }));
+    await page.settle();
+    editField(page, "count", "3");
+    page.node('[data-action="refresh"]').listeners.click(); await page.settle();
+    assert.equal(field(page, "count").value, "3");
+    submitSchedule(page); await page.settle();
+    assert.equal(JSON.parse(page.calls.find(call => call.url.endsWith("/schedule")).options.body).revision, 4);
+    assert.equal(field(page, "count").value, "3");
+    assert.equal(editorAction(page, "save").disabled, true);
+    server = { ...editableTarget, schedule_revision: 5, schedule: { ...editableTarget.schedule, count: 4 } };
+    page.node('[data-action="refresh"]').listeners.click(); await page.settle();
+    assert.equal(field(page, "count").value, "3");
+    assert.equal(editorAction(page, "save").disabled, true);
+    editorAction(page, "load").listeners.click();
+    await page.settle();
+    assert.equal(field(page, "count").value, "4");
+    assert.equal(editorAction(page, "save").disabled, false);
+});
+
+test("revision advances discovered by refresh cannot silently rebase a dirty draft", async () => {
+    let server = editableTarget;
+    const page = bootstrap(true, async () => targetReply(server));
+    await page.settle(); editField(page, "interval", "120");
+    server = { ...editableTarget, schedule_revision: 5 };
+    page.node('[data-action="refresh"]').listeners.click(); await page.settle();
+    assert.equal(field(page, "interval").value, "120");
+    assert.equal(editorAction(page, "save").disabled, true);
+    submitSchedule(page); await page.settle();
+    assert.ok(!page.calls.some(call => call.url.endsWith("/schedule")));
+});
+
+test("target identity refresh discards a draft instead of moving it to another repository", async () => {
+    let server = editableTarget;
+    const page = bootstrap(true, async () => targetReply(server));
+    await page.settle(); editField(page, "count", "3");
+    server = { ...editableTarget, repository: "fixture/new", schedule_source: "variable", schedule_revision: 0,
+        target_binding: '["primary","[\\"fixture/new\\",\\"Checkin.yml\\",\\"main\\"]"]' };
+    page.node('[data-action="refresh"]').listeners.click(); await page.settle();
+    assert.equal(field(page, "count").value, "2");
+});
+
+test("restoring variables requires confirmation and posts only identity and revision", async () => {
+    const restored = { ...editableTarget, schedule_source: "variable", schedule_revision: 5,
+        schedule: { mode: "fixed", times: ["08:30"] } };
+    const page = bootstrap(true, async (_url, options) => options.method === "GET" ? targetReply(editableTarget)
+        : Response.json({ status: "SCHEDULE_RESET", target: restored }));
+    await page.settle();
+    editorAction(page, "reset").listeners.click();
+    assert.ok(!page.calls.some(call => call.url.endsWith("/schedule/reset")));
+    assert.match(page.node("[data-dialog-message]").textContent, /变量/);
+    page.node("[data-cancel]").listeners.click();
+    assert.ok(!page.calls.some(call => call.url.endsWith("/schedule/reset")));
+    editorAction(page, "reset").listeners.click(); page.node("[data-confirm]").listeners.click(); await page.settle();
+    assert.deepEqual(JSON.parse(page.calls.find(call => call.url.endsWith("/schedule/reset")).options.body),
+        { binding: editableTarget.target_binding, revision: 4 });
+    assert.equal(field(page, "time").value, "08:30");
+});
+
+test("double submits serialize saves while every target action is disabled", async () => {
+    let finish;
+    const page = bootstrap(true, async (_url, options) => options.method === "GET" ? targetReply(editableTarget)
+        : new Promise(resolve => { finish = resolve; }));
+    await page.settle();
+    submitSchedule(page); submitSchedule(page);
+    assert.equal(page.calls.filter(call => call.url.endsWith("/schedule")).length, 1);
+    assert.equal(editorAction(page, "reset").disabled, true);
+    assert.equal(runButton(page).disabled, true);
+    finish(Response.json({ status: "SCHEDULE_UPDATED", target: { ...editableTarget, schedule_revision: 5 } })); await page.settle();
+});
+
+test("late save and late JSON decoding cannot restore state after logout or a new login", async () => {
+    let finish;
+    const page = bootstrap(true, async (_url, options) => options.method === "GET" ? targetReply(editableTarget)
+        : new Promise(resolve => { finish = resolve; }));
+    await page.settle(); editField(page, "count", "3"); submitSchedule(page);
+    page.node('[data-action="logout"]').listeners.click(); await page.settle();
+    page.login(); await page.settle();
+    const messageBeforeLateReply = page.node("[data-feedback]").textContent;
+    finish(Response.json({ status: "SCHEDULE_UPDATED", target: { ...editableTarget, schedule_revision: 5,
+        schedule: { ...editableTarget.schedule, count: 3 } } })); await page.settle();
+    assert.equal(field(page, "count").value, "2");
+    assert.equal(page.node("[data-feedback]").textContent, messageBeforeLateReply);
+});
+
+test("ambiguous 503 reads actual settings once without resubmitting and keeps draft blocked", async () => {
+    let server = editableTarget;
+    const page = bootstrap(true, async (_url, options) => {
+        if (options.method === "GET") return targetReply(server);
+        server = { ...editableTarget, schedule_revision: 5, schedule: { ...editableTarget.schedule, count: 3 } };
+        return Response.json({ status: "STORAGE_UNAVAILABLE", detail: "private_alarm_marker" }, { status: 503 });
+    });
+    await page.settle(); editField(page, "count", "3"); submitSchedule(page); await page.settle();
+    assert.equal(page.calls.filter(call => call.url.endsWith("/schedule")).length, 1);
+    assert.equal(page.calls.filter(call => call.url === "/api/admin/targets").length, 2);
+    assert.equal(field(page, "count").value, "3");
+    assert.equal(editorAction(page, "save").disabled, true);
+    assert.match(page.node("[data-feedback]").textContent, /未确认|未知/);
+    assert.match(page.node("[data-feedback]").textContent, /Alarm|自动.*状态/);
+    assert.ok(!textTree(page.node("[data-targets]")).includes("private_alarm_marker"));
+});
+
+test("failed unknown readback retains draft for later read and does not claim unsaved failure", async () => {
+    let reads = 0;
+    const page = bootstrap(true, async (_url, options) => options.method === "GET"
+        ? ++reads === 1 ? targetReply(editableTarget) : Promise.reject(Error("private_read_marker"))
+        : Response.json({ status: "STORAGE_UNAVAILABLE" }, { status: 503 }));
+    await page.settle(); editField(page, "count", "3"); submitSchedule(page); await page.settle();
+    assert.match(page.node("[data-feedback]").textContent, /未知|未确认/);
+    assert.ok(!/完全没保存|未保存成功/.test(page.node("[data-feedback]").textContent));
+    assert.equal(field(page, "count").value, "3");
+    assert.equal(editorAction(page, "save").disabled, true);
+});
+
+test("safe server validation is inline and preserves input without printing raw diagnostics", async (t) => {
+    for (const [error, expected] of [[{ field: "schedule.min_interval_minutes", code: "SCHEDULE_INTERVAL" }, /1.*1440/],
+        [{ field: "schedule.times", code: "SCHEDULE_SPACING" }, /次日|循环/],
+        [{ field: "private_field_marker", code: "private_code_marker" }, /排期|不可识别/]]) {
+        await t.test(error.code, async () => {
+            const page = bootstrap(true, async (_url, options) => options.method === "GET" ? targetReply(editableTarget)
+                : Response.json({ status: "SCHEDULE_INVALID", error }, { status: 400 }));
+            await page.settle(); editField(page, "count", "3"); submitSchedule(page); await page.settle();
+            assert.equal(field(page, "count").value, "3");
+            assert.match(textTree(page.node("[data-targets]")), expected);
+            assert.ok(!textTree(page.node("[data-targets]")).includes("private_"));
+            assert.equal(editorAction(page, "save").disabled, false);
+        });
+    }
+});
+
+test("stale identity and exhausted revisions block retries without an automatic overwrite", async (t) => {
+    for (const status of ["TARGET_CHANGED", "SCHEDULE_REVISION_LIMIT"]) await t.test(status, async () => {
+        const page = bootstrap(true, async (_url, options) => options.method === "GET" ? targetReply(editableTarget)
+            : Response.json({ status }, { status: status === "TARGET_CHANGED" ? 409 : 429 }));
+        await page.settle(); editField(page, "count", "3"); submitSchedule(page); await page.settle();
+        assert.equal(field(page, "count").value, "3");
+        assert.equal(editorAction(page, "save").disabled, true);
+        assert.equal(page.calls.filter(call => call.url.endsWith("/schedule")).length, 1);
+    });
+});
+
+test("interval skips display the cause and never become success or GitHub rejection", async () => {
+    const target = { ...editableTarget, slots: [{ at: "2026-11-10T01:30:00.000Z", attempted: true, result: "INTERVAL_SKIPPED" }] };
+    const page = bootstrap(true, async () => targetReply(target)); await page.settle();
+    assert.match(textTree(page.node("[data-targets]")), /最小间隔未到.*不补发/);
+    assert.ok(!/GitHub 拒绝|成功触发/.test(textTree(page.node("[data-targets]"))));
+});
+
+test("rolled interval skip displays its prior date and cause alongside tomorrow slots without history", async () => {
+    const target = { ...editableTarget, schedule_date: "2026-11-10",
+        slots: [{ at: "2026-11-10T01:00:00.000Z", attempted: false, result: "PLANNED" }], history: [],
+        schedule_last: { date: "2026-11-09", at: "2026-11-09T01:00:00.000Z", result: "INTERVAL_SKIPPED" } };
+    const page = bootstrap(true, async () => targetReply(target)); await page.settle();
+    const text = textTree(page.node("[data-targets]"));
+    assert.match(text, /上次排期末时段.*2026-11-09.*09:00.*最小间隔未到.*不补发/);
+    assert.match(text, /已保存时段.*2026-11-10.*待执行/);
+    assert.ok(!/GitHub 拒绝|成功触发/.test(text));
+    assert.ok(editorAction(page, "save"));
+});
+
+test("prior plan summary accepts safe results without reclassifying unknown or missed attempts", async t => {
+    for (const [result, status] of [["DISPATCH_ACCEPTED", /GitHub 已受理/], ["DISPATCH_UNKNOWN", /结果未知/],
+        ["DISPATCH_HTTP_500", /GitHub 拒绝/], ["MISSED_DATE", /已跳过.*不补发/],
+        ["TARGET_CHANGED", /已跳过.*不补发/], ["PLANNED", /待执行/]]) await t.test(result, async () => {
+        const page = bootstrap(true, async () => targetReply({ ...editableTarget,
+            schedule_last: { date: "2026-11-09", at: "2026-11-09T01:00:00.000Z", result } }));
+        await page.settle();
+        assert.match(textTree(page.node("[data-targets]")), status);
+        assert.ok(editorAction(page, "save"));
+    });
+});
+
+test("malformed prior plan summaries fail closed without rendering raw fields or enabling edits", async t => {
+    const last = { date: "2026-11-09", at: "2026-11-09T01:00:00.000Z", result: "INTERVAL_SKIPPED" };
+    for (const [name, schedule_last] of [["null", null], ["array", []],
+        ["missing date", { at: last.at, result: last.result }], ["invalid date", { ...last, date: "2026-02-30" }],
+        ["wrong local date", { ...last, at: "2026-11-09T17:00:00.000Z" }],
+        ["invalid timestamp", { ...last, at: "private_timestamp_marker" }],
+        ["noncanonical timestamp", { ...last, at: "2026-11-09T09:00:00+08:00" }],
+        ["unknown result", { ...last, result: "private_result_marker" }],
+        ["raw extra field", { ...last, secret: "private_record_marker" }]]) await t.test(name, async () => {
+        const page = bootstrap(true, async () => targetReply({ ...editableTarget, schedule_last })); await page.settle();
+        const text = textTree(page.node("[data-targets]"));
+        assert.match(text, /不可识别|读取失败/);
+        assert.ok(!text.includes("private_"));
+        assert.equal(editorAction(page, "save"), undefined);
+    });
+});
+
+test("malformed schedule metadata and interval fields fail closed rather than authorizing edits", async (t) => {
+    for (const extra of [{ schedule_revision: 1.5 }, { target_binding: "private_binding_marker" },
+        { schedule_source: "private_source_marker" }, { automatic_state: "known", automatic_last_at: "bad" },
+        { schedule: { ...editableTarget.schedule, min_interval_minutes: "60" } },
+        { schedule: { ...editableTarget.schedule, unexpected: "private_schedule_marker" } }]) await t.test(JSON.stringify(extra), async () => {
+        const page = bootstrap(true, async () => targetReply({ ...editableTarget, ...extra })); await page.settle();
+        assert.equal(editorAction(page, "save"), undefined);
+        assert.ok(!textTree(page.node("[data-targets]")).includes("private_"));
+        assert.match(textTree(page.node("[data-targets]")), /不可识别|读取失败/);
+    });
+});
+
+test("reload restores saved effective schedule and logout clears unsaved memory drafts", async () => {
+    const page = bootstrap(true, async () => targetReply(editableTarget)); await page.settle();
+    editField(page, "count", "3");
+    page.node('[data-action="logout"]').listeners.click(); await page.settle(); page.login(); await page.settle();
+    assert.equal(field(page, "count").value, "2");
+    const reload = bootstrap(false, async () => targetReply(editableTarget), false, "", async () => Response.json(sessionData()));
+    await reload.settle(); assert.equal(field(reload, "count").value, "2");
+});
+
+test("a session ending during save JSON decoding cannot replace the newer authenticated state", async () => {
+    let finishJSON;
+    const page = bootstrap(true, async (_url, options) => options.method === "GET" ? targetReply(editableTarget)
+        : { status: 200, ok: true, json: () => new Promise(resolve => { finishJSON = resolve; }) });
+    await page.settle(); submitSchedule(page); await page.settle();
+    page.node('[data-action="logout"]').listeners.click(); await page.settle(); page.login(); await page.settle();
+    const feedback = page.node("[data-feedback]").textContent;
+    finishJSON({ status: "SCHEDULE_UPDATED", target: { ...editableTarget, schedule_revision: 5,
+        schedule: { ...editableTarget.schedule, count: 4 } } }); await page.settle();
+    assert.equal(field(page, "count").value, "2");
+    assert.equal(page.node("[data-feedback]").textContent, feedback);
+});
+
+test("unknown readback ending after logout cannot apply the late target state", async () => {
+    let reads = 0, finish;
+    const page = bootstrap(true, async (_url, options) => options.method === "GET"
+        ? ++reads === 2 ? new Promise(resolve => { finish = resolve; }) : targetReply(editableTarget)
+        : Response.json({ status: "STORAGE_UNAVAILABLE" }, { status: 503 }));
+    await page.settle(); submitSchedule(page); await page.settle();
+    page.node('[data-action="logout"]').listeners.click(); await page.settle(); page.login(); await page.settle();
+    const feedback = page.node("[data-feedback]").textContent;
+    finish(targetReply({ ...editableTarget, schedule_revision: 5 })); await page.settle();
+    assert.equal(field(page, "count").value, "2");
+    assert.equal(page.node("[data-feedback]").textContent, feedback);
+});
+
+test("discard action cannot discard a draft when effective saved state could not be read", async () => {
+    let server = editableTarget;
+    const page = bootstrap(true, async () => targetReply(server)); await page.settle();
+    editField(page, "count", "3");
+    server = { ...editableTarget, error: "STORAGE_UNAVAILABLE", schedule_source: null, schedule_revision: null,
+        target_binding: null, automatic_state: "unknown", automatic_last_at: null, automatic_next_allowed_at: null };
+    editorAction(page, "load").listeners.click(); await page.settle();
+    assert.match(page.node("[data-feedback]").textContent, /未确认|不可用/);
+    server = editableTarget;
+    page.node('[data-action="refresh"]').listeners.click(); await page.settle();
+    assert.equal(field(page, "count").value, "3");
+});
+
+test("late toggle events from an old editor cannot repopulate cleared logout drafts", async () => {
+    const page = bootstrap(true, async () => targetReply(editableTarget)); await page.settle();
+    editField(page, "count", "3");
+    const oldDetails = findEditor(page, "scheduleTargetId", "primary");
+    page.node('[data-action="logout"]').listeners.click(); await page.settle();
+    page.login(); await page.settle();
+    oldDetails.open = true;
+    oldDetails.listeners.toggle();
+    page.node('[data-action="refresh"]').listeners.click(); await page.settle();
+    assert.equal(field(page, "count").value, "2");
+});
+
+test("disconnected editor toggles cannot resurrect a draft cleared by a successful save", async () => {
+    const saved = { ...editableTarget, schedule_revision: 5, schedule: { ...editableTarget.schedule, count: 4 } };
+    const page = bootstrap(true, async (url, options) => options.method === "GET" ? targetReply(editableTarget)
+        : Response.json({ status: url.endsWith("/enabled") ? "ENABLED_UPDATED" : "SCHEDULE_UPDATED", target: saved })); await page.settle();
+    editField(page, "count", "3");
+    const oldDetails = findEditor(page, "scheduleTargetId", "primary");
+    submitSchedule(page); await page.settle();
+    oldDetails.isConnected = false; oldDetails.open = true; oldDetails.listeners.toggle();
+    // A regular operation redraws the cards without changing their saved settings.
+    findEditor(page, "action", "toggle").listeners.change(); await page.settle();
+    assert.equal(field(page, "count").value, "4");
+});
+
+test("unknown save readback with unavailable target metadata cannot claim effective settings were read", async () => {
+    let reads = 0;
+    const unavailable = { ...editableTarget, error: "STORAGE_UNAVAILABLE", schedule_source: null, schedule_revision: null,
+        target_binding: null, automatic_state: "unknown", automatic_last_at: null, automatic_next_allowed_at: null };
+    const page = bootstrap(true, async (_url, options) => options.method === "GET" ? targetReply(++reads === 1 ? editableTarget : unavailable)
+        : Response.json({ status: "STORAGE_UNAVAILABLE" }, { status: 503 }));
+    await page.settle(); editField(page, "count", "3"); submitSchedule(page); await page.settle();
+    assert.match(page.node("[data-feedback]").textContent, /读取也未确认/);
+    assert.ok(!/已读取实际设置/.test(page.node("[data-feedback]").textContent));
+});
+
+test("closed or missing-token targets may edit schedules without enabling or running them", async (t) => {
+    for (const extra of [{ enabled: false }, { token_state: "missing" }]) await t.test(JSON.stringify(extra), async () => {
+        const page = bootstrap(true, async () => targetReply({ ...editableTarget, ...extra })); await page.settle();
+        assert.equal(editorAction(page, "save").disabled, false);
+        assert.equal(editorAction(page, "reset").disabled, false);
+        assert.equal(runButton(page).disabled, true);
+    });
+});
+
+test("error fallback metadata leaves management blocked without claiming a variable source", async () => {
+    const target = { ...editableTarget, error: "STATE_INVALID", schedule_source: null, schedule_revision: null,
+        target_binding: null, automatic_state: "unknown", automatic_last_at: null, automatic_next_allowed_at: null };
+    const page = bootstrap(true, async () => targetReply(target)); await page.settle();
+    assert.equal(editorAction(page, "save"), undefined);
+    assert.equal(runButton(page).disabled, true);
+    assert.match(textTree(page.node("[data-targets]")), /状态不可用/);
+    assert.ok(!/生效排期.*变量配置/.test(textTree(page.node("[data-targets]"))));
+});
+
+test("toggle response with a newer schedule revision marks existing draft conflicted instead of leaving a silent save", async () => {
+    const newer = { ...editableTarget, enabled: false, schedule_revision: 5, schedule: { ...editableTarget.schedule, count: 4 } };
+    const page = bootstrap(true, async (_url, options) => options.method === "GET" ? targetReply(editableTarget)
+        : Response.json({ status: "ENABLED_UPDATED", target: newer })); await page.settle();
+    editField(page, "count", "3");
+    const toggle = findEditor(page, "action", "toggle"); toggle.checked = false; toggle.listeners.change(); await page.settle();
+    assert.equal(field(page, "count").value, "3");
+    assert.equal(editorAction(page, "save").disabled, true);
+    assert.match(textTree(page.node("[data-targets]")), /其他页面/);
 });

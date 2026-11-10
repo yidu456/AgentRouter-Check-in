@@ -20,26 +20,37 @@ export function timeMinute(value) {
         ? Number(value.slice(0, 2)) * 60 + Number(value.slice(3)) : null;
 }
 
+export const intervalMinutes = schedule => schedule.min_interval_minutes ?? 1;
+
 export function normalizeSchedule(value, field = "schedule") {
+    const keys = value?.mode === "fixed" ? ["mode", "times"]
+        : value?.mode === "random" ? ["mode", "count", "window"] : null;
+    if (!keys) invalid(field + ".mode", "SCHEDULE_MODE");
+    const hasInterval = Object.hasOwn(value, "min_interval_minutes");
+    if (!exactKeys(value, hasInterval ? [...keys, "min_interval_minutes"] : keys)) invalid(field, "SCHEDULE_FIELDS");
+    const gap = hasInterval ? value.min_interval_minutes : 1;
+    if (!Number.isInteger(gap) || gap < 1 || gap > 1440) invalid(field + ".min_interval_minutes", "SCHEDULE_INTERVAL");
+    const interval = gap === 1 ? {} : { min_interval_minutes: gap };
     if (value?.mode === "fixed") {
-        if (!exactKeys(value, ["mode", "times"])) invalid(field, "SCHEDULE_FIELDS");
         if (!Array.isArray(value.times) || value.times.length < 1 || value.times.length > 24)
             invalid(field + ".times", "SCHEDULE_COUNT");
         if (value.times.some(time => timeMinute(time) === null)) invalid(field + ".times", "SCHEDULE_TIME");
         if (new Set(value.times).size !== value.times.length) invalid(field + ".times", "SCHEDULE_DUPLICATE");
-        return { mode: "fixed", times: [...value.times].sort() };
+        const times = [...value.times].sort(), minutes = times.map(timeMinute);
+        if (minutes.some((minute, index) => (minutes[index + 1] ?? minutes[0] + 1440) - minute < gap))
+            invalid(field + ".times", "SCHEDULE_SPACING");
+        return { mode: "fixed", times, ...interval };
     }
     if (value?.mode === "random") {
-        if (!exactKeys(value, ["mode", "count", "window"])) invalid(field, "SCHEDULE_FIELDS");
         if (!Number.isInteger(value.count) || value.count < 1 || value.count > 24)
             invalid(field + ".count", "SCHEDULE_COUNT");
         if (!exactKeys(value.window, ["start", "end"])) invalid(field + ".window", "SCHEDULE_FIELDS");
         const start = timeMinute(value.window.start), end = timeMinute(value.window.end);
         if (start === null || end === null || start > end) invalid(field + ".window", "SCHEDULE_TIME");
-        if (value.count > end - start + 1) invalid(field + ".count", "SCHEDULE_CAPACITY");
-        return { mode: "random", count: value.count, window: { start: value.window.start, end: value.window.end } };
+        if ((value.count - 1) * gap > end - start || value.count * gap > 1440)
+            invalid(field + ".count", "SCHEDULE_CAPACITY");
+        return { mode: "random", count: value.count, window: { start: value.window.start, end: value.window.end }, ...interval };
     }
-    invalid(field + ".mode", "SCHEDULE_MODE");
 }
 
 export function scheduleFor(target) {

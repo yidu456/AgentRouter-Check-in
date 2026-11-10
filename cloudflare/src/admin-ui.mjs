@@ -2,19 +2,20 @@ export function adminShell() {
     return `<section id="trigger-admin" data-admin-panel hidden aria-label="签到调度管理">
 <style>
 #trigger-admin{--ar-page:#f6fafb;--ar-panel:#fff;--ar-rail:#e8f2f4;--ar-ink:#17383f;--ar-muted:#536d74;--ar-line:#cbdcdf;--ar-teal:#087579;--ar-danger:#a13e33;--ar-warn:#81511a;color:var(--ar-ink);font:14px/1.6 "Segoe UI Variable Text","Microsoft YaHei","PingFang SC",sans-serif;max-width:1160px;margin:36px auto;padding:0 20px;min-width:0}
-[hidden]{display:none!important}#trigger-admin *{box-sizing:border-box}#trigger-admin h1,#trigger-admin h2,#trigger-admin h3,#trigger-admin p{margin:0}#trigger-admin button,#trigger-admin input{font:inherit}#trigger-admin button,#trigger-admin summary{cursor:pointer}#trigger-admin :focus-visible{outline:3px solid var(--ar-teal);outline-offset:4px}#trigger-admin code{font:12px/1.65 "Cascadia Code",Consolas,monospace;overflow-wrap:anywhere}
+[hidden]{display:none!important}#trigger-admin *{box-sizing:border-box}#trigger-admin h1,#trigger-admin h2,#trigger-admin h3,#trigger-admin p{margin:0}#trigger-admin button,#trigger-admin input,#trigger-admin select{font:inherit}#trigger-admin button,#trigger-admin summary{cursor:pointer}#trigger-admin :focus-visible{outline:3px solid var(--ar-teal);outline-offset:4px}#trigger-admin code{font:12px/1.65 "Cascadia Code",Consolas,monospace;overflow-wrap:anywhere}
 #trigger-admin .ar-shell{display:grid;grid-template-columns:158px minmax(0,1fr);background:var(--ar-page);border:1px solid var(--ar-line);border-radius:12px;overflow:clip}#trigger-admin .ar-sidebar{background:var(--ar-rail);padding:28px 16px;display:flex;flex-direction:column;gap:30px;border-right:1px solid var(--ar-line)}#trigger-admin .ar-brand{display:flex;align-items:center;gap:9px;font-weight:650}#trigger-admin .ar-monogram{display:grid;place-items:center;width:30px;height:30px;background:#164e59;color:white;border-radius:7px;font:16px "Baskerville",serif}#trigger-admin .ar-brand small{display:block;font-size:11px;font-weight:400;color:var(--ar-muted)}#trigger-admin .ar-nav{display:grid;gap:8px}#trigger-admin .ar-nav button{border:0;background:transparent;color:var(--ar-muted);text-align:left;padding:10px 12px;border-radius:6px}#trigger-admin .ar-nav button[aria-pressed=true]{background:var(--ar-panel);color:var(--ar-ink);box-shadow:inset 3px 0 var(--ar-teal)}#trigger-admin .ar-sidebar-footer{margin-top:auto;color:var(--ar-muted);font-size:12px;display:grid;gap:4px}
 #trigger-admin .ar-content{padding:28px 26px;min-width:0;background:radial-gradient(ellipse at 100% 0%,var(--ar-rail),transparent 44%),var(--ar-page)}#trigger-admin .ar-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px;border:0;padding:0}#trigger-admin h1{font:600 28px/1.4 "Noto Serif SC","Songti SC","SimSun",serif;letter-spacing:1px}#trigger-admin .ar-sub{font-size:12px;color:var(--ar-muted);margin-top:5px}#trigger-admin .ar-notice{font-size:12px;color:var(--ar-muted);padding:14px 0 20px;border-top:1px solid var(--ar-line)}#trigger-admin .ar-section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}#trigger-admin h2{font-size:16px}#trigger-admin .ar-target-count{font-size:12px;color:var(--ar-muted)}#trigger-admin .ar-targets{display:grid;gap:14px}#trigger-admin .ar-target{background:var(--ar-panel);border:1px solid var(--ar-line);border-radius:8px;overflow:clip}#trigger-admin .ar-target-main{padding:18px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px}#trigger-admin .ar-repo-line{display:flex;gap:8px;align-items:center;flex-wrap:wrap}#trigger-admin h3{font-size:14px;font-weight:600;overflow-wrap:anywhere}#trigger-admin .ar-state{font-size:11px;padding:1px 7px;border-radius:4px;color:var(--ar-teal);background:#e0f2ef}#trigger-admin .ar-state.paused{color:var(--ar-muted);background:var(--ar-rail)}#trigger-admin .ar-state.warning{color:var(--ar-warn);background:#fff3df}#trigger-admin .ar-metadata{display:flex;flex-wrap:wrap;gap:5px 12px;margin:7px 0 12px;font-size:11px;color:var(--ar-muted)}#trigger-admin .ar-next{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}#trigger-admin .ar-next-label{font-size:12px;color:var(--ar-muted)}#trigger-admin .ar-next-time{font-size:19px;font-variant-numeric:tabular-nums}#trigger-admin .ar-next-time.paused{font-size:14px;color:var(--ar-muted)}#trigger-admin .ar-last{font-size:11px;color:var(--ar-muted);margin-top:5px}#trigger-admin .ar-target-actions{display:flex;flex-direction:column;align-items:flex-end;gap:14px;min-width:103px}
 #trigger-admin .ar-switch-label{display:flex;align-items:center;gap:8px;color:var(--ar-muted);font-size:12px;min-height:32px}#trigger-admin .ar-switch-input{appearance:none;width:32px;height:18px;background:var(--ar-line);border:0;border-radius:12px;position:relative;margin:0;flex-shrink:0}#trigger-admin .ar-switch-input:before{content:"";position:absolute;top:3px;left:3px;width:12px;height:12px;background:white;border-radius:50%}#trigger-admin .ar-switch-input:checked{background:var(--ar-teal)}#trigger-admin .ar-switch-input:checked:before{transform:translateX(14px)}#trigger-admin .ar-switch-input:disabled{opacity:.5}#trigger-admin .ar-button{display:inline-flex;justify-content:center;align-items:center;border:1px solid var(--ar-line);background:var(--ar-panel);color:var(--ar-ink);padding:6px 11px;border-radius:5px;white-space:nowrap;font-size:12px;min-height:32px}#trigger-admin .ar-button.primary{background:#164e59;border-color:#164e59;color:white}#trigger-admin .ar-button.quiet{border:0;background:transparent;padding:4px 7px}#trigger-admin .ar-button.danger{color:var(--ar-danger)}#trigger-admin .ar-button:disabled{color:var(--ar-muted);background:var(--ar-rail);opacity:.65;cursor:not-allowed}
 #trigger-admin .ar-logs{border-top:1px solid var(--ar-line);background:var(--ar-page)}#trigger-admin .ar-logs summary{font-size:12px;color:var(--ar-muted);padding:10px 18px}#trigger-admin .ar-log-content{padding:0 18px 12px}#trigger-admin .ar-log-toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:11px;color:var(--ar-muted)}#trigger-admin .ar-log-row{display:grid;grid-template-columns:145px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--ar-line);font-size:12px}#trigger-admin .ar-log-time{font-size:11px;color:var(--ar-muted);font-variant-numeric:tabular-nums}#trigger-admin .ar-log-time span{display:block}#trigger-admin .ar-log-status.accepted{color:var(--ar-teal)}#trigger-admin .ar-log-status.rejected{color:var(--ar-danger)}#trigger-admin .ar-log-status.unknown{color:var(--ar-warn)}#trigger-admin .ar-log-detail{font-size:11px;color:var(--ar-muted);margin-top:2px}#trigger-admin .ar-empty{padding:13px 0;font-size:12px;color:var(--ar-muted)}#trigger-admin .ar-feedback{min-height:24px;margin-top:14px;font-size:12px;overflow-wrap:anywhere;color:var(--ar-teal)}#trigger-admin .ar-bottom{margin-top:20px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px 20px;font-size:11px;color:var(--ar-muted)}
 #trigger-admin .ar-dialog{border:1px solid var(--ar-line);border-radius:12px;background:white;color:var(--ar-ink);padding:24px;width:min(420px,calc(100% - 32px));box-shadow:0 18px 65px #0003;margin:auto}#trigger-admin .ar-dialog::backdrop{background:#10232c80}#trigger-admin .ar-dialog h2{font-size:19px;margin-bottom:10px}#trigger-admin .ar-dialog p{font-size:13px;color:var(--ar-muted);margin-bottom:8px;overflow-wrap:anywhere}#trigger-admin .ar-dialog-target{display:block;padding:10px 12px;background:var(--ar-rail);border-radius:6px;margin:12px 0 16px}#trigger-admin .ar-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
 #trigger-admin .ar-sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}#trigger-admin .ar-readiness{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}#trigger-admin .ar-readiness article{border-top:3px solid var(--ar-teal);background:var(--ar-panel);padding:14px 12px;min-width:0;border-radius:0 0 6px 6px}#trigger-admin .ar-readiness article.warning{border-color:var(--ar-warn)}#trigger-admin .ar-readiness article.invalid{border-color:var(--ar-danger)}#trigger-admin .ar-readiness h3{font-size:12px;color:var(--ar-muted);margin-bottom:6px}#trigger-admin .ar-check-state{font-size:16px;font-weight:600}#trigger-admin .ar-check-note{font-size:11px;color:var(--ar-muted);margin-top:6px}#trigger-admin .ar-config-table{width:100%;border-collapse:collapse;background:var(--ar-panel);font-size:12px;table-layout:fixed}#trigger-admin .ar-config-table caption{text-align:left;font-size:16px;font-weight:600;padding:12px 0}#trigger-admin .ar-config-table th,#trigger-admin .ar-config-table td{padding:12px 10px;border-bottom:1px solid var(--ar-line);text-align:left;vertical-align:top;overflow-wrap:anywhere}#trigger-admin .ar-config-table thead{background:var(--ar-rail)}#trigger-admin .ar-config-table th:first-child{width:24%}#trigger-admin .ar-config-table th:nth-child(2){width:18%}#trigger-admin .ar-config-table th:nth-child(3){width:12%}#trigger-admin .ar-config-table th:nth-child(4){width:24%}#trigger-admin .ar-config-error{background:#fff5ef;box-shadow:inset 3px 0 var(--ar-danger)}#trigger-admin .ar-field-error{display:block;color:var(--ar-danger);font-size:11px;margin-top:6px}#trigger-admin .ar-badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}#trigger-admin .ar-time-badge{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--ar-line);border-radius:4px;padding:3px 6px;font-size:11px;background:var(--ar-page);font-variant-numeric:tabular-nums}#trigger-admin .ar-time-badge.accepted{color:var(--ar-teal)}#trigger-admin .ar-time-badge.unknown{color:var(--ar-warn)}#trigger-admin .ar-time-badge.skipped{color:var(--ar-muted)}#trigger-admin .ar-saved-slots{margin-top:12px}#trigger-admin .ar-diagnostic{margin-top:16px;border:1px solid var(--ar-line);border-radius:6px;background:var(--ar-panel)}#trigger-admin .ar-diagnostic summary{padding:10px 12px;font-size:12px;color:var(--ar-muted)}#trigger-admin .ar-diagnostic pre{white-space:pre-wrap;margin:0;padding:0 12px 12px;overflow-wrap:anywhere}
+#trigger-admin .ar-schedule{border-top:1px solid var(--ar-line);background:var(--ar-page)}#trigger-admin .ar-schedule summary{padding:12px 18px;font-size:12px;color:var(--ar-teal)}#trigger-admin .ar-schedule-form{padding:4px 18px 18px;display:grid;gap:12px}#trigger-admin .ar-schedule-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}#trigger-admin .ar-schedule-field{display:grid;gap:5px;font-size:12px;min-width:0}#trigger-admin .ar-schedule-field input,#trigger-admin .ar-schedule-field select{width:100%;min-width:0;min-height:38px;border:1px solid var(--ar-line);border-radius:5px;background:var(--ar-panel);color:var(--ar-ink);padding:6px 9px}#trigger-admin .ar-schedule-times{display:grid;gap:10px}#trigger-admin .ar-schedule-time{display:flex;align-items:end;gap:10px}#trigger-admin .ar-schedule-time label{flex:1}#trigger-admin .ar-schedule-actions{display:flex;flex-wrap:wrap;gap:8px}@media(max-width:480px){#trigger-admin .ar-schedule-fields{grid-template-columns:1fr}#trigger-admin .ar-schedule-form{padding:4px 14px 16px}#trigger-admin .ar-schedule summary,#trigger-admin .ar-schedule-field input,#trigger-admin .ar-schedule-field select{min-height:44px}}
 @media(max-width:780px){#trigger-admin{margin:0;padding:0}#trigger-admin .ar-shell{grid-template-columns:1fr;border-radius:0}#trigger-admin .ar-sidebar{padding:13px 18px;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;border-right:0;border-bottom:1px solid var(--ar-line)}#trigger-admin .ar-sidebar-footer{display:none}#trigger-admin .ar-nav{display:flex;gap:4px}#trigger-admin .ar-nav button{padding:7px 10px}#trigger-admin .ar-nav button[aria-pressed=true]{box-shadow:inset 0 -2px var(--ar-teal)}#trigger-admin .ar-content{padding:22px 20px}}
 @media(max-width:480px){#trigger-admin .ar-brand small{display:none}#trigger-admin .ar-brand{font-size:12px}#trigger-admin .ar-monogram{width:25px;height:25px}#trigger-admin .ar-sidebar{padding:12px;flex-wrap:wrap;gap:8px}#trigger-admin .ar-nav{margin-left:auto}#trigger-admin .ar-nav button{font-size:12px}#trigger-admin .ar-content{padding:20px 14px}#trigger-admin h1{font-size:24px}#trigger-admin .ar-top{flex-wrap:wrap;gap:10px}#trigger-admin .ar-target-main{grid-template-columns:1fr;padding:16px 14px;gap:12px}#trigger-admin .ar-target-actions{flex-direction:row;justify-content:space-between;align-items:center}#trigger-admin .ar-button,#trigger-admin .ar-switch-label,#trigger-admin .ar-logs summary{min-height:44px}#trigger-admin .ar-log-content{padding:0 14px 12px}#trigger-admin .ar-log-row{grid-template-columns:minmax(0,1fr) auto;gap:4px 8px}#trigger-admin .ar-log-time{grid-column:1;display:flex;gap:8px;flex-wrap:wrap}#trigger-admin .ar-log-body{grid-column:1}#trigger-admin .ar-log-row>button{grid-column:2;grid-row:1/span 2}#trigger-admin .ar-next-time{font-size:17px}#trigger-admin .ar-next-time.paused{font-size:14px}#trigger-admin .ar-section-heading{flex-wrap:wrap}}
 @media(max-width:900px){#trigger-admin .ar-readiness{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:650px){#trigger-admin .ar-config-table,#trigger-admin .ar-config-table caption,#trigger-admin .ar-config-table tbody,#trigger-admin .ar-config-table tr,#trigger-admin .ar-config-table td{display:block;width:100%}#trigger-admin .ar-config-table thead{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}#trigger-admin .ar-config-table tr{margin-bottom:12px;border:1px solid var(--ar-line);border-radius:6px;overflow:hidden}#trigger-admin .ar-config-table td{border:0;padding:8px 12px}#trigger-admin .ar-config-table td:before{content:attr(data-label);display:block;font-size:11px;color:var(--ar-muted)}#trigger-admin .ar-diagnostic summary{min-height:44px}}
 </style>
 <div class="ar-shell"><aside class="ar-sidebar" aria-label="页面导航"><div class="ar-brand"><span class="ar-monogram" aria-hidden="true">AR</span><div>AgentRouter<small>Cloudflare 调度</small></div></div><nav class="ar-nav" aria-label="管理栏目"><button type="button" data-view="repositories" aria-pressed="true" aria-controls="ar-repositories">仓库管理</button><button type="button" data-view="config" aria-pressed="false" aria-controls="ar-config">配置检查</button><button type="button" data-view="logs" aria-pressed="false" aria-controls="ar-logs">运行日志</button><button type="button" data-action="logout">退出管理</button></nav><div class="ar-sidebar-footer"><span>独立日期 · 每日排期</span><span>固定 / 随机多次</span><span>Asia/Shanghai</span></div></aside>
-<div class="ar-content"><header class="ar-top"><div><h1 data-page-title>仓库管理</h1><p class="ar-sub">管理员已登录 · 安全 Cookie 会话</p><p class="ar-sub" data-session-expiry></p></div><button type="button" class="ar-button" data-action="refresh">刷新状态</button></header><section id="ar-repositories" data-section="repositories" aria-label="仓库管理"><p class="ar-notice">开关与时段来自数据库。手动运行不消耗自动时段；刷新可初始化首次计划，但不提交或补发任务。</p><div class="ar-section-heading"><h2>运行目标</h2><span class="ar-target-count" data-target-count></span></div><div class="ar-targets" data-targets></div></section><section id="ar-config" data-section="config" aria-label="配置检查" hidden><h2>运行时配置</h2><p class="ar-sr-only" data-config-summary aria-live="polite"></p><div class="ar-readiness" data-readiness></div><div data-config-items></div><p class="ar-notice" data-config-advice></p><details class="ar-diagnostic" data-config-details><summary>展开技术诊断（仅安全状态与错误码）</summary><pre><code data-config-diagnostic></code></pre></details><p class="ar-notice">配置在 Cloudflare Variables &amp; Secrets 修改并保存部署。本页只检查配置，不展示密钥、不验证 GitHub 权限或机器人送达。数据库开关优先于 JSON 默认值。</p></section><section id="ar-logs" data-section="logs" aria-label="运行日志" hidden><p class="ar-notice">按仓库分类，每个工作流／分支目标最多保留 20 条。GitHub 已受理不等于签到成功；最终签到汇总由 Actions 发送。</p><div class="ar-targets" data-logs></div></section><p class="ar-feedback" role="status" aria-live="polite" data-feedback></p><footer class="ar-bottom"><span>删除日志不改变日程或防重复记录</span><span>北京时间 UTC+8</span></footer></div></div>
+<div class="ar-content"><header class="ar-top"><div><h1 data-page-title>仓库管理</h1><p class="ar-sub">管理员已登录 · 安全 Cookie 会话</p><p class="ar-sub" data-session-expiry></p></div><button type="button" class="ar-button" data-action="refresh">刷新状态</button></header><section id="ar-repositories" data-section="repositories" aria-label="仓库管理"><p class="ar-notice">开关与时段来自数据库，生效排期优先使用数据库设置。保存排期不等于运行；手动运行不消耗自动时段，刷新不提交或补发任务。</p><div class="ar-section-heading"><h2>运行目标</h2><span class="ar-target-count" data-target-count></span></div><div class="ar-targets" data-targets></div></section><section id="ar-config" data-section="config" aria-label="配置检查" hidden><h2>运行时配置</h2><p class="ar-sr-only" data-config-summary aria-live="polite"></p><div class="ar-readiness" data-readiness></div><div data-config-items></div><p class="ar-notice" data-config-advice></p><details class="ar-diagnostic" data-config-details><summary>展开技术诊断（仅安全状态与错误码）</summary><pre><code data-config-diagnostic></code></pre></details><p class="ar-notice">此表仅检查 Cloudflare 变量初值，不是数据库最终排期。变量在 Cloudflare Variables &amp; Secrets 修改并保存部署；仓库卡片显示生效值，可保存排期或恢复变量配置。本页不展示密钥、不验证 GitHub 权限或机器人送达；数据库开关和排期覆盖优先于变量默认值。</p></section><section id="ar-logs" data-section="logs" aria-label="运行日志" hidden><p class="ar-notice">按仓库分类，每个工作流／分支目标最多保留 20 条。GitHub 已受理不等于签到成功；最终签到汇总由 Actions 发送。</p><div class="ar-targets" data-logs></div></section><p class="ar-feedback" role="status" aria-live="polite" data-feedback></p><footer class="ar-bottom"><span>删除日志不改变日程或防重复记录</span><span>北京时间 UTC+8</span></footer></div></div>
 <dialog class="ar-dialog" aria-labelledby="ar-dialog-title" data-confirm-dialog><h2 id="ar-dialog-title" data-dialog-title></h2><code class="ar-dialog-target" data-dialog-target></code><p data-dialog-message></p><p data-dialog-note></p><div class="ar-dialog-actions"><button type="button" class="ar-button" data-cancel>取消</button><button type="button" class="ar-button primary" data-confirm>确认</button></div></dialog></section>`;
 }
 
@@ -59,6 +60,10 @@ export function adminClient() {
         STORAGE_UNAVAILABLE: "存储暂不可用，请稍后刷新。",
         TRANSPORT_UNKNOWN: "未收到完整响应，操作结果未知。不会自动重试。",
         RESPONSE_INVALID: "服务返回的状态不可识别，请刷新状态。",
+        SCHEDULE_INVALID: "排期未通过校验，请修正输入后保存。",
+        SCHEDULE_CONFLICT: "排期已被其他页面修改。草稿保留；请刷新并核对，显式载入已保存值后再编辑。",
+        TARGET_CHANGED: "目标身份已改变。草稿不能转移，请刷新并核对新的目标。",
+        SCHEDULE_REVISION_LIMIT: "排期版本已达上限，不能继续保存或恢复；请联系管理员。",
     };
     const notifications = {
         NOTIFY_UNKNOWN: "企业微信结果未知，不自动重试",
@@ -72,22 +77,35 @@ export function adminClient() {
     let pending = null;
     let loadError = "";
     const uncertain = new Map();
+    const drafts = new Map();
     const dateFormat = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric",
         month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
     const dateText = (value) => dateFormat.format(new Date(value));
     const minuteFormat = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hour12: false });
     const minuteText = (value) => minuteFormat.format(new Date(value));
     const clock = (value) => typeof value === "string" && /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
-    const validSchedule = (value) => value && (value.mode === "fixed"
-        ? Array.isArray(value.times) && value.times.length >= 1 && value.times.length <= 24
-            && value.times.every(clock) && new Set(value.times).size === value.times.length
-        : value.mode === "random" && Number.isInteger(value.count) && value.count >= 1 && value.count <= 24
-            && clock(value.window?.start) && clock(value.window?.end) && value.window.start <= value.window.end
-            && value.count <= (Number(value.window.end.slice(0, 2)) - Number(value.window.start.slice(0, 2))) * 60
-                + Number(value.window.end.slice(3)) - Number(value.window.start.slice(3)) + 1);
+    const minute = value => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+    const exactKeys = (value, keys) => value && typeof value === "object" && !Array.isArray(value)
+        && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+    const validSchedule = (value) => {
+        const keys = value?.mode === "fixed" ? ["mode", "times"] : value?.mode === "random" ? ["mode", "count", "window"] : null;
+        if (!keys || !exactKeys(value, Object.hasOwn(value, "min_interval_minutes") ? [...keys, "min_interval_minutes"] : keys)) return false;
+        const gap = Object.hasOwn(value, "min_interval_minutes") ? value.min_interval_minutes : 1;
+        if (!Number.isInteger(gap) || gap < 1 || gap > 1440) return false;
+        if (value.mode === "fixed") {
+            if (!Array.isArray(value.times) || value.times.length < 1 || value.times.length > 24
+                || !value.times.every(clock) || new Set(value.times).size !== value.times.length) return false;
+            const minutes = [...value.times].sort().map(minute);
+            return minutes.every((at, index) => (minutes[index + 1] ?? minutes[0] + 1440) - at >= gap);
+        }
+        return Number.isInteger(value.count) && value.count >= 1 && value.count <= 24
+            && exactKeys(value.window, ["start", "end"]) && clock(value.window.start) && clock(value.window.end)
+            && value.window.start <= value.window.end && (value.count - 1) * gap <= minute(value.window.end) - minute(value.window.start)
+            && value.count * gap <= 1440;
+    };
     const validSlot = (slot) => slot && typeof slot.at === "string" && Number.isFinite(Date.parse(slot.at))
         && typeof slot.attempted === "boolean" && (knownResult(slot.result)
-            || ["PLANNED", "MISSED_DATE", "TARGET_CHANGED"].includes(slot.result));
+            || ["PLANNED", "MISSED_DATE", "TARGET_CHANGED", "INTERVAL_SKIPPED"].includes(slot.result));
     const resultText = (code) => code === "DISPATCH_ACCEPTED" ? "GitHub 已受理，不等于签到成功"
         : /^DISPATCH_HTTP_[1-5][0-9]{2}$/.test(code) ? `GitHub 拒绝请求（HTTP ${code.slice(-3)}）`
         : "触发结果未知，不自动重试";
@@ -99,6 +117,24 @@ export function adminClient() {
         && record.at >= 0 && record.at <= 8640000000000000
         && ["automatic", "manual"].includes(record.source) && knownResult(record.result)
         && Object.hasOwn(notifications, record.notification);
+    const bindingFor = target => JSON.stringify([target.id, JSON.stringify([target.repository.toLowerCase(), target.workflow, target.ref])]);
+    const iso = value => typeof value === "string" && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+    const validLast = last => exactKeys(last, ["date", "at", "result"]) && iso(last.at)
+        && typeof last.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(last.date) && dateText(last.at).slice(0, 10) === last.date
+        && (knownResult(last.result) || ["PLANNED", "MISSED_DATE", "TARGET_CHANGED", "INTERVAL_SKIPPED"].includes(last.result));
+    const metadataKeys = ["schedule_source", "schedule_revision", "target_binding", "automatic_state", "automatic_last_at", "automatic_next_allowed_at"];
+    const validMetadata = target => {
+        if (metadataKeys.every(key => target[key] === undefined)) return true;
+        const automatic = target.automatic_state === "unknown" ? target.automatic_last_at === null && target.automatic_next_allowed_at === null
+            : target.automatic_state === "known" && iso(target.automatic_last_at)
+                && (target.automatic_next_allowed_at === null || iso(target.automatic_next_allowed_at)
+                    && Date.parse(target.automatic_next_allowed_at) >= Date.parse(target.automatic_last_at));
+        return automatic && (target.error ? target.schedule_source === null && target.schedule_revision === null && target.target_binding === null
+            : ["database", "variable"].includes(target.schedule_source) && Number.isSafeInteger(target.schedule_revision)
+                && target.schedule_revision >= 0 && target.target_binding === bindingFor(target) && validSchedule(target.schedule));
+    };
+    const editable = target => !target.error && ["database", "variable"].includes(target.schedule_source)
+        && validMetadata(target);
     const validTarget = (target) => target && typeof target.id === "string"
         && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.id)
         && [target.repository, target.workflow, target.ref].every((value) => typeof value === "string" && value.length <= 512)
@@ -109,7 +145,9 @@ export function adminClient() {
         && (target.schedule === undefined || validSchedule(target.schedule))
         && (target.schedule_date === undefined || target.schedule_date === null
             || typeof target.schedule_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(target.schedule_date))
-        && (target.slots === undefined || Array.isArray(target.slots) && target.slots.length <= 24 && target.slots.every(validSlot));
+        && (target.slots === undefined || Array.isArray(target.slots) && target.slots.length <= 24 && target.slots.every(validSlot))
+        && (!Object.hasOwn(target, "schedule_last") || validLast(target.schedule_last))
+        && validMetadata(target);
 
     function element(tag, className, text) {
         const item = document.createElement(tag);
@@ -148,6 +186,7 @@ export function adminClient() {
         pending = null;
         loadError = "";
         uncertain.clear();
+        drafts.clear();
         list.replaceChildren();
         logList.replaceChildren();
         root.querySelector("[data-target-count]").textContent = "";
@@ -192,7 +231,12 @@ export function adminClient() {
             clearLocal(errors[data?.status] ?? errors.UNAUTHORIZED);
             throw new Error("SESSION_ENDED");
         }
-        if (!response.ok) throw new Error(Object.hasOwn(errors, data?.status) ? data.status : "RESPONSE_INVALID");
+        if (!response.ok) {
+            const error = new Error(Object.hasOwn(errors, data?.status) ? data.status : "RESPONSE_INVALID");
+            error.status = response.status;
+            if (data?.status === "SCHEDULE_INVALID") error.diagnostic = safeDiagnostic(data.error);
+            throw error;
+        }
         return data;
     }
     async function authenticate(authorization = "") {
@@ -247,19 +291,21 @@ export function adminClient() {
         TARGET_FIELDS: "目标字段为 id、repository、workflow、ref、token_secret；enabled 和 schedule 可省略。",
         TARGET_FIELD: "检查提示的字段：仓库 owner/repo、工作流 .yml/.yaml、真实分支 ref、Secret 名称或布尔 enabled。",
         DUPLICATE_ID: "每个目标的 id 必须唯一。", DUPLICATE_TARGET: "同一仓库、工作流和分支只能配置一次。",
-        SCHEDULE_FIELDS: "fixed 只填写 mode/times；random 只填写 mode/count/window。",
+        SCHEDULE_FIELDS: "fixed 只填写 mode/times；random 只填写 mode/count/window；两种模式可填写 min_interval_minutes。",
         SCHEDULE_MODE: "排期 mode 必须为 fixed 或 random。",
         SCHEDULE_TIMES: "固定时间列表填写 1～24 个互不重复的 HH:mm 时间。",
         SCHEDULE_TIME: "时间严格填写 HH:mm，范围 00:00～23:59；窗口 start 不晚于 end，不支持跨日。",
         SCHEDULE_DUPLICATE: "固定时间不能重复，请删除重复分钟。",
         SCHEDULE_COUNT: "填写 1～24 的整数，且不超过窗口内可选分钟数。",
-        SCHEDULE_CAPACITY: "随机次数不能超过窗口内可选分钟数，请减少 count 或扩大窗口。",
+        SCHEDULE_CAPACITY: "随机次数与最小间隔不能超过窗口分钟容量或每日 1440 分钟，请减少次数、缩短间隔或扩大窗口。",
+        SCHEDULE_INTERVAL: "最小间隔填写 1～1440 的整数分钟；只约束自动触发。",
+        SCHEDULE_SPACING: "固定时间须满足最小间隔，包括最后一次至次日第一次的循环间隔。",
         SCHEDULE_WINDOW: "窗口时间填写 HH:mm，start 不晚于 end；不支持跨日窗口。",
         CONFIG_INVALID: "按字段位置修正配置后保存部署。",
     };
     function safeDiagnostic(value) {
         return { field: typeof value?.field === "string"
-            && /^(?:TRIGGER_CONFIG|config|version|targets(?:\[(?:[0-9]|[1-9][0-9])\](?:\.(?:id|repository|workflow|ref|token_secret|enabled|schedule(?:\.(?:mode|count|times(?:\[\d{1,2}\])?|window(?:\.(?:start|end))?))?))?)?)$/.test(value.field)
+            && /^(?:TRIGGER_CONFIG|config|version|schedule(?:\.(?:mode|count|min_interval_minutes|times(?:\[\d{1,2}\])?|window(?:\.(?:start|end))?))?|targets(?:\[(?:[0-9]|[1-9][0-9])\](?:\.(?:id|repository|workflow|ref|token_secret|enabled|schedule(?:\.(?:mode|count|min_interval_minutes|times(?:\[\d{1,2}\])?|window(?:\.(?:start|end))?))?))?)?)$/.test(value.field)
             ? value.field : "config", code: Object.hasOwn(hints, value?.code) ? value.code : "CONFIG_INVALID" };
     }
     function renderConfiguration(health) {
@@ -311,7 +357,7 @@ export function adminClient() {
         }
         const table = element("table", "ar-config-table");
         table.setAttribute("aria-label", "运行目标配置检查");
-        table.append(element("caption", "", "运行目标配置"));
+        table.append(element("caption", "", "运行目标配置 · 变量初值（非数据库最终值）"));
         const headings = ["目标 / 仓库", "工作流 / 分支", "排期 / 每天次数", "时间 / 窗口", "GitHub Secret"];
         const head = element("thead");
         const headRow = element("tr");
@@ -338,6 +384,7 @@ export function adminClient() {
                 for (const text of schedule.mode === "fixed" ? schedule.times : [schedule.window.start + "～" + schedule.window.end])
                     badges.append(element("span", "ar-time-badge", text));
                 cells[3].append(badges);
+                cells[3].append(element("p", "ar-check-note", `自动最小间隔 ${schedule.min_interval_minutes ?? 1} 分钟`));
             } else cells[3].append(element("span", "ar-field-error", "— 时间未通过"));
             cells[4].append(element("code", "", safe(item.token_secret, /^[A-Z][A-Z0-9_]{0,63}$/)), element("p", "ar-check-note",
                 { configured: "已填写 · 权限未验证", missing: "! 缺失", invalid: "! 格式不合法" }[item.token_state] ?? "— 无法确认"));
@@ -346,6 +393,190 @@ export function adminClient() {
         }
         table.append(head, body);
         configItems.replaceChildren(table);
+    }
+    function acceptTargets(data) {
+        if (data?.status !== "OK" || !Array.isArray(data.targets) || data.targets.length > 100
+            || !data.targets.every(validTarget) || new Set(data.targets.map(target => target.id)).size !== data.targets.length)
+            throw new Error("RESPONSE_INVALID");
+        for (const [id, draft] of drafts) {
+            const target = data.targets.find(item => item.id === id);
+            if (!target || !target.error && target.target_binding !== draft.binding) drafts.delete(id);
+            else if (!target.error && target.schedule_revision !== draft.revision && !draft.blocked) {
+                draft.blocked = true;
+                draft.message = errors.SCHEDULE_CONFLICT;
+            }
+        }
+        targets = data.targets;
+    }
+    function scheduleDraft(target) {
+        const schedule = target.schedule;
+        return drafts.get(target.id) ?? { binding: target.target_binding, revision: target.schedule_revision,
+            mode: schedule.mode, times: [...(schedule.times ?? ["08:30"])], count: String(schedule.count ?? 1),
+            start: schedule.window?.start ?? "01:00", end: schedule.window?.end ?? "23:00",
+            interval: String(schedule.min_interval_minutes ?? 1), open: false, blocked: false, message: "" };
+    }
+    function scheduleEditor(target) {
+        const current = session;
+        const draft = scheduleDraft(target);
+        const disabled = busy || !editable(target);
+        const details = element("details", "ar-schedule");
+        details.dataset.scheduleTargetId = target.id;
+        details.open = draft.open;
+        details.append(element("summary", "", "排期设置 · " + (target.schedule_source === "database" ? "数据库设置" : "变量配置")));
+        details.addEventListener("toggle", () => {
+            if (current !== session || !verified || details.isConnected === false) return;
+            draft.open = details.open;
+            if (details.open || drafts.has(target.id)) drafts.set(target.id, draft);
+        });
+        const form = element("form", "ar-schedule-form");
+        form.dataset.scheduleForm = target.id;
+        const count = element("output", "ar-check-note");
+        const updateCount = () => { count.textContent = `计划 ${draft.mode === "fixed" ? draft.times.length : draft.count} 次/天（非成功次数）`; };
+        updateCount();
+        const message = element("p", "ar-field-error", draft.message || "修改后请显式保存；仅自动触发受间隔约束，手动仍为 30 秒冷却。");
+        message.id = "ar-schedule-message-" + target.id;
+        message.setAttribute("role", "status");
+        message.setAttribute("aria-live", "polite");
+        const remember = () => {
+            draft.open = true;
+            drafts.set(target.id, draft);
+            if (!draft.blocked) { draft.message = "草稿未保存，刷新会保留输入。"; message.textContent = draft.message; }
+            updateCount();
+        };
+        const input = (name, labelText, type, value, handler, min, max) => {
+            const label = element("label", "ar-schedule-field", labelText);
+            const control = element(type === "select" ? "select" : "input");
+            control.id = "ar-schedule-" + target.id + "-" + name;
+            label.htmlFor = control.id;
+            control.dataset.scheduleField = name;
+            if (type === "select") {
+                for (const [value, text] of [["random", "随机"], ["fixed", "固定"]]) {
+                    const option = element("option", "", text); option.value = value; control.append(option);
+                }
+            } else { control.type = type; control.required = true; }
+            control.value = value;
+            control.disabled = disabled;
+            if (min !== undefined) { control.min = String(min); control.max = String(max); control.step = "1"; }
+            control.setAttribute("aria-describedby", message.id);
+            control.addEventListener(type === "select" ? "change" : "input", () => {
+                if (busy) return;
+                handler(control.value); remember();
+                if (type === "select") { render(); document.getElementById(control.id)?.focus(); }
+            });
+            label.append(control);
+            return label;
+        };
+        const fields = element("div", "ar-schedule-fields");
+        fields.append(input("mode", "模式", "select", draft.mode, value => { draft.mode = value; }));
+        if (draft.mode === "random") {
+            fields.append(input("count", "随机次数 / 天", "number", draft.count, value => { draft.count = value; }, 1, 24),
+                input("start", "窗口开始（北京时间）", "time", draft.start, value => { draft.start = value; }),
+                input("end", "窗口结束（北京时间）", "time", draft.end, value => { draft.end = value; }));
+        }
+        fields.append(input("interval", "自动最小间隔（分钟）", "number", draft.interval, value => { draft.interval = value; }, 1, 1440));
+        form.append(fields);
+        if (draft.mode === "fixed") {
+            const times = element("div", "ar-schedule-times");
+            draft.times.forEach((time, index) => {
+                const row = element("div", "ar-schedule-time");
+                const label = input("time", `固定时间 ${index + 1}（北京时间）`, "time", time, value => { draft.times[index] = value; });
+                label.htmlFor = label.children[0].id = "ar-schedule-" + target.id + "-time-" + index;
+                row.append(label, button("删除时间", "schedule-remove", () => {
+                    if (busy || draft.times.length <= 1) return;
+                    draft.times.splice(index, 1); remember(); render();
+                    document.getElementById("ar-schedule-" + target.id + "-time-" + Math.min(index, draft.times.length - 1))?.focus();
+                }, disabled || draft.times.length <= 1, "quiet danger"));
+                times.append(row);
+            });
+            times.append(button("添加固定时间", "schedule-add", () => {
+                if (busy || draft.times.length >= 24) return;
+                draft.times.push(""); remember(); render();
+                document.getElementById("ar-schedule-" + target.id + "-time-" + (draft.times.length - 1))?.focus();
+            }, disabled || draft.times.length >= 24));
+            form.append(times);
+        }
+        const actions = element("div", "ar-schedule-actions");
+        const save = button("保存排期", "schedule-save", () => {}, disabled || draft.blocked
+            || target.schedule_revision === Number.MAX_SAFE_INTEGER, "primary");
+        save.type = "submit";
+        actions.append(save, button("恢复变量配置", "schedule-reset", () => {
+            if (disabled || draft.blocked) return;
+            drafts.set(target.id, draft); confirm("schedule/reset", target);
+        }, disabled || draft.blocked || target.schedule_revision === Number.MAX_SAFE_INTEGER),
+        button("载入已保存值 / 丢弃草稿", "schedule-load", () => loadSavedSchedule(target), disabled, "quiet"));
+        form.append(count, message, actions);
+        form.addEventListener("submit", event => {
+            event.preventDefault();
+            if (disabled || draft.blocked) return;
+            remember();
+            void saveSchedule(target, false);
+        });
+        details.append(form);
+        return details;
+    }
+    async function loadSavedSchedule(target) {
+        if (busy || !csrf || !verified) return;
+        const current = session;
+        busy = true; render();
+        try {
+            acceptTargets(await request("/api/admin/targets"));
+            const saved = targets.find(item => item.id === target.id);
+            if (!saved || !editable(saved)) throw new Error(saved?.error ?? "TARGET_NOT_FOUND");
+            drafts.delete(target.id);
+            if (current === session) announce("已载入实际保存值，未保存草稿已丢弃。请核对后重新编辑。");
+        } catch (error) {
+            if (current === session) announce(errors[error.message] ?? errors.RESPONSE_INVALID);
+        } finally {
+            if (current === session) { busy = false; render(); }
+        }
+    }
+    async function saveSchedule(target, reset) {
+        const draft = drafts.get(target.id) ?? scheduleDraft(target);
+        if (!csrf || !verified || busy || !editable(target) || draft.blocked
+            || draft.binding !== target.target_binding || draft.revision !== target.schedule_revision
+            || draft.revision === Number.MAX_SAFE_INTEGER) return;
+        const current = session;
+        const body = { binding: draft.binding, revision: draft.revision };
+        if (!reset) body.schedule = { mode: draft.mode, ...(draft.mode === "fixed" ? { times: [...draft.times].sort() }
+            : { count: Number(draft.count), window: { start: draft.start, end: draft.end } }),
+            ...(Number(draft.interval) === 1 ? {} : { min_interval_minutes: Number(draft.interval) }) };
+        drafts.set(target.id, draft);
+        busy = true; render();
+        let message;
+        try {
+            const data = await request(`/api/admin/targets/${encodeURIComponent(target.id)}/schedule${reset ? "/reset" : ""}`, body);
+            if (data?.status !== (reset ? "SCHEDULE_RESET" : "SCHEDULE_UPDATED") || !validTarget(data.target)
+                || !editable(data.target) || data.target.target_binding !== body.binding || data.target.schedule_revision !== body.revision + 1
+                || data.target.schedule_source !== (reset ? "variable" : "database")) throw new Error("TRANSPORT_UNKNOWN");
+            targets = targets.map(item => item.id === target.id ? data.target : item);
+            drafts.delete(target.id);
+            message = reset ? "已恢复变量配置，数据库最终排期已更新；未提交或补发运行。"
+                : "排期已保存为数据库设置；未提交或补发运行，既有自动基线不变。";
+        } catch (error) {
+            if (current !== session || error.message === "SESSION_ENDED") return;
+            message = errors[error.message] ?? errors.RESPONSE_INVALID;
+            if (error.message === "SCHEDULE_INVALID") {
+                const diagnostic = error.diagnostic ?? safeDiagnostic(null);
+                message += ` ${diagnostic.field}：${hints[diagnostic.code]}`;
+            } else if (["SCHEDULE_CONFLICT", "TARGET_CHANGED", "SCHEDULE_REVISION_LIMIT"].includes(error.message)) draft.blocked = true;
+            else if (error.status === 503 || ["TRANSPORT_UNKNOWN", "RESPONSE_INVALID"].includes(error.message)) {
+                draft.blocked = true;
+                message = "保存结果未确认：设置可能已提交，Alarm / 完整自动状态仍未知。正在读取实际值，不会重新提交；草稿保留。";
+                try {
+                    acceptTargets(await request("/api/admin/targets"));
+                    const saved = targets.find(item => item.id === target.id);
+                    if (!saved || !editable(saved)) throw new Error("RESPONSE_INVALID");
+                    message += " 已读取实际设置，请核对来源与版本；显式载入已保存值以丢弃草稿。";
+                } catch {
+                    if (current !== session) return;
+                    message += " 实际设置读取也未确认，请稍后刷新再核对。";
+                }
+            }
+            if (drafts.get(target.id) === draft) draft.message = message;
+        } finally {
+            if (current === session) { busy = false; render(); }
+        }
+        if (current === session && verified) announce(message);
     }
     function render() {
         const cards = targets.map((target) => {
@@ -378,13 +609,22 @@ export function adminClient() {
                 : !target.enabled ? "自动和手动触发均已关闭，已提交的运行不受影响"
                 : target.token_state !== "configured" ? "在 Cloudflare 补充 GitHub Token 后才能触发"
                 : "数据库中的已保存日程 · 手动运行不改变此时间"));
-            if (target.slots !== undefined) {
+            if (editable(target)) {
+                const schedule = target.schedule;
+                description.append(element("p", "ar-last", `生效排期：${target.schedule_source === "database" ? "数据库设置" : "变量配置"} · 版本 ${target.schedule_revision} · ${schedule.mode === "fixed" ? "固定" : "随机"} ${schedule.mode === "fixed" ? schedule.times.length : schedule.count} 次/天 · 自动最小间隔 ${schedule.min_interval_minutes ?? 1} 分钟`),
+                    element("p", "ar-last", target.automatic_state === "known" ? `上次自动尝试 ${dateText(target.automatic_last_at)} · 下次允许自动尝试 ${target.automatic_next_allowed_at ? dateText(target.automatic_next_allowed_at) : "待确认"}`
+                        : "自动基线尚未建立：不能恢复无法确认的历史；首次自动尝试后开始保护。"));
+            }
+            for (const [label, date, items] of [["已保存时段", target.schedule_date, target.slots],
+                ["上次排期末时段", target.schedule_last?.date, target.schedule_last ? [target.schedule_last] : undefined]]) {
+                if (items === undefined) continue;
                 const slots = element("div", "ar-saved-slots");
-                slots.append(element("p", "ar-next-label", "已保存时段" + (target.schedule_date ? " · " + target.schedule_date : "")));
+                slots.append(element("p", "ar-next-label", label + (date ? " · " + date : "")));
                 const badges = element("div", "ar-badges");
-                for (const slot of target.slots) {
-                    const skipped = ["MISSED_DATE", "TARGET_CHANGED"].includes(slot.result);
-                    const status = slot.result === "PLANNED" ? "待执行" : skipped ? "已跳过（不补发）"
+                for (const slot of items) {
+                    const skipped = ["MISSED_DATE", "TARGET_CHANGED", "INTERVAL_SKIPPED"].includes(slot.result);
+                    const status = slot.result === "INTERVAL_SKIPPED" ? "最小间隔未到，已跳过（不补发）"
+                        : slot.result === "PLANNED" ? "待执行" : skipped ? "已跳过（不补发）"
                         : slot.result === "DISPATCH_ACCEPTED" ? "GitHub 已受理" : slot.result === "DISPATCH_UNKNOWN" ? "结果未知"
                             : "GitHub 拒绝";
                     const badge = element("span", "ar-time-badge " + (skipped ? "skipped" : slot.result === "DISPATCH_ACCEPTED"
@@ -394,7 +634,7 @@ export function adminClient() {
                     badge.append(at, element("span", "", status));
                     badges.append(badge);
                 }
-                if (!target.slots.length) badges.append(element("span", "ar-check-note", "暂无已保存时段"));
+                if (!items.length) badges.append(element("span", "ar-check-note", "暂无已保存时段"));
                 slots.append(badges);
                 description.append(slots);
             }
@@ -412,6 +652,7 @@ export function adminClient() {
                 () => confirm("run", target), blocked || !runnable, "primary"));
             main.append(description, actions);
             article.append(main);
+            if (editable(target)) article.append(scheduleEditor(target));
             return article;
         });
         if (!targets.length) cards.push(element("p", "ar-empty", loadError ? "目标读取失败：" + loadError : "暂无配置目标。请在 Cloudflare 添加目标并发布。"));
@@ -491,10 +732,7 @@ export function adminClient() {
             } else { overview.textContent = "配置状态暂不可用"; throw new Error("RESPONSE_INVALID"); }
             const data = await request("/api/admin/targets");
             if (current !== session) return;
-            if (data?.status !== "OK" || !Array.isArray(data.targets) || data.targets.length > 100
-                || !data.targets.every(validTarget) || new Set(data.targets.map((target) => target.id)).size !== data.targets.length)
-                throw new Error("RESPONSE_INVALID");
-            targets = data.targets;
+            acceptTargets(data);
             verified = true;
             root.hidden = false;
             publicView.hidden = true;
@@ -517,18 +755,22 @@ export function adminClient() {
     function confirm(action, target, logId) {
         if (busy || !verified || target.error) return;
         pending = { action, target, logId };
-        root.querySelector("[data-dialog-title]").textContent = action === "run" ? "确认手动运行？"
+        root.querySelector("[data-dialog-title]").textContent = action === "schedule/reset" ? "恢复变量配置？" : action === "run" ? "确认手动运行？"
             : action === "clear" ? "清空这个运行目标的日志？" : "删除这条调度日志？";
         root.querySelector("[data-dialog-target]").textContent = target.repository + " / " + target.workflow + " / " + target.ref + " / " + target.id;
-        root.querySelector("[data-dialog-message]").textContent = action === "run"
+        root.querySelector("[data-dialog-message]").textContent = action === "schedule/reset"
+            ? "将撤销此目标的数据库排期覆盖，恢复当前变量配置。未保存草稿会在恢复成功后丢弃。"
+            : action === "run"
             ? uncertain.has(target.id) ? "上次响应未知。只重试原请求 ID，查询或完成同一请求，不创建新运行。"
                 : "将向 GitHub 提交一次手动触发，不改变下一次自动运行时间。"
             : action === "clear" ? `将删除该目标管理页中的 ${target.history.length} 条记录。` : "只删除管理页中的这一条记录。";
-        root.querySelector("[data-dialog-note]").textContent = action === "run"
+        root.querySelector("[data-dialog-note]").textContent = action === "schedule/reset"
+            ? "不立即运行或补发；不改变开关、手动请求记录、日志或可信自动基线。"
+            : action === "run"
             ? "GitHub 已受理不等于签到成功；通知单独显示，不自动重试。"
             : "不删除日程、开关、防重复请求记录或 Cloudflare / GitHub 平台日志。";
         const confirmButton = root.querySelector("[data-confirm]");
-        confirmButton.textContent = action === "run" ? uncertain.has(target.id) ? "重试原请求" : "确认运行"
+        confirmButton.textContent = action === "schedule/reset" ? "确认恢复变量" : action === "run" ? uncertain.has(target.id) ? "重试原请求" : "确认运行"
             : action === "clear" ? "确认清空" : "确认删除";
         confirmButton.className = "ar-button " + (action === "run" ? "primary" : "danger");
         dialog.showModal();
@@ -545,7 +787,7 @@ export function adminClient() {
             if (action === "enabled") {
                 if (data?.status !== "ENABLED_UPDATED" || !validTarget(data.target) || data.target.id !== target.id)
                     throw new Error("RESPONSE_INVALID");
-                targets = targets.map((item) => item.id === target.id ? data.target : item);
+                acceptTargets({ status: "OK", targets: targets.map(item => item.id === target.id ? data.target : item) });
                 message = `${target.repository} 已${data.target.enabled ? "开启" : "关闭"}，数据库开关已保存。`;
             } else if (action === "run") {
                 if (!knownResult(data?.status) || typeof data.cached !== "boolean" || !validRecord(data.record)
@@ -606,6 +848,7 @@ export function adminClient() {
         const { action, target, logId } = pending;
         pending = null;
         dialog.close();
+        if (action === "schedule/reset") { void saveSchedule(target, true); return; }
         if (action === "run" && (!target.enabled || target.token_state !== "configured" || target.error)) return;
         let body = action === "clear" ? {} : { log_id: logId };
         if (action === "run") {

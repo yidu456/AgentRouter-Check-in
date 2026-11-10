@@ -1,4 +1,4 @@
-import { scheduleFor, targetBinding, timeMinute } from "./config.mjs";
+import { intervalMinutes, scheduleFor, targetBinding, timeMinute } from "./config.mjs";
 
 export const DAY = 86400000;
 export const MINUTE = 60000;
@@ -27,7 +27,7 @@ export function randomMinute(size = 1321) {
 }
 
 const resultValid = result => typeof result === "string"
-    && /^(PLANNED|MISSED_DATE|TARGET_CHANGED|DISPATCH_ACCEPTED|DISPATCH_UNKNOWN|DISPATCH_HTTP_[1-5]\d{2})$/.test(result)
+    && /^(PLANNED|MISSED_DATE|TARGET_CHANGED|INTERVAL_SKIPPED|DISPATCH_ACCEPTED|DISPATCH_UNKNOWN|DISPATCH_HTTP_[1-5]\d{2})$/.test(result)
     && !/\s/.test(result);
 const notificationValid = value => ["NOTIFY_UNKNOWN", "NOTIFY_ACCEPTED", "NOTIFY_FAILED", "NOTIFY_NOT_CONFIGURED", "NOTIFY_CONFIG_INVALID"].includes(value);
 const dateValid = date => typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)
@@ -80,8 +80,11 @@ export function createPlan(target, previous, now, afterPrevious = false) {
     if (schedule.mode === "fixed") minutes = schedule.times.map(timeMinute);
     else {
         const start = timeMinute(schedule.window.start), end = timeMinute(schedule.window.end);
-        const pool = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-        minutes = Array.from({ length: schedule.count }, () => pool.splice(randomMinute(pool.length), 1)[0]).sort((a, b) => a - b);
+        const gap = intervalMinutes(schedule), size = end - start + 1 - (schedule.count - 1) * (gap - 1);
+        // Sample compressed offsets, then restore the required gaps without retrying plans.
+        const pool = Array.from({ length: size }, (_, i) => i);
+        const draws = Array.from({ length: schedule.count }, () => pool.splice(randomMinute(pool.length), 1)[0]).sort((a, b) => a - b);
+        minutes = draws.map((offset, i) => start + offset + i * (gap - 1));
     }
     const slots = minutes.map(minute => {
         const at = dayStart(date) + minute * MINUTE;

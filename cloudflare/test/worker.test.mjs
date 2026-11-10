@@ -16,7 +16,10 @@ function fixture(t, options = {}) {
     let alarm = null;
     const storage = {
         async get(key) { return structuredClone(values.get(key)); },
-        async put(key, value) { values.set(key, structuredClone(value)); },
+        async put(key, value) {
+            const batch = structuredClone(typeof key === "string" ? { [key]: value } : key);
+            for (const [name, saved] of Object.entries(batch)) values.set(name, saved);
+        },
         async getAlarm() { return alarm; },
         async setAlarm(value) { alarm = value; },
         async deleteAlarm() { alarm = null; },
@@ -233,7 +236,8 @@ test("failed durable attempt write prevents HTTP request", async (t) => {
     f.setNow("2026-11-07T02:00:00+08:00");
     const put = f.storage.put;
     f.storage.put = async (key, value) => {
-        if (key === "plan" && value.slots[0].attempted) throw new Error("disk-private-marker");
+        const plan = typeof key === "object" ? key.plan : key === "plan" ? value : null;
+        if (plan?.slots[0].attempted) throw new Error("disk-private-marker");
         return put(key, value);
     };
     await assert.rejects(() => f.object.alarm());
@@ -246,7 +250,8 @@ test("crash after attempt persistence does not resend after restart", async (t) 
     f.setNow("2026-11-07T02:00:00+08:00");
     const put = f.storage.put;
     f.storage.put = async (key, value) => {
-        if (key === "plan" && value.slots[0].result === "DISPATCH_ACCEPTED") throw new Error("disk-error");
+        const plan = typeof key === "object" ? key.plan : key === "plan" ? value : null;
+        if (plan?.slots[0].result === "DISPATCH_ACCEPTED") throw new Error("disk-error");
         return put(key, value);
     };
     await assert.rejects(() => f.object.alarm());
@@ -300,7 +305,8 @@ test("crash after bot send cannot duplicate dispatch or notification", async (t)
         ? new Response(null, { status: 204 }) : Response.json({ errcode: 0 }));
     const put = f.storage.put;
     f.storage.put = async (key, value) => {
-        if (key === "plan" && value.slots[0].notification === "NOTIFY_ACCEPTED") throw new Error("fixture-storage-error");
+        const plan = typeof key === "object" ? key.plan : key === "plan" ? value : null;
+        if (plan?.slots[0].notification === "NOTIFY_ACCEPTED") throw new Error("fixture-storage-error");
         return put(key, value);
     };
     await assert.rejects(() => f.object.alarm());
@@ -316,7 +322,10 @@ test("multiple targets have separate state and independent random draws", async 
     const valuesB = new Map();
     const storageB = { ...f.storage,
         async get(key) { return structuredClone(valuesB.get(key)); },
-        async put(key, value) { valuesB.set(key, structuredClone(value)); } };
+        async put(key, value) {
+            const batch = structuredClone(typeof key === "string" ? { [key]: value } : key);
+            for (const [name, saved] of Object.entries(batch)) valuesB.set(name, saved);
+        } };
     const b = new TriggerSchedule({ ...f.ctx, storage: storageB }, f.env);
     await f.object.fetch(request());
     await b.fetch(request("github_b"));
@@ -333,7 +342,10 @@ test("each target dispatches only its own repository and token", async (t) => {
     const valuesB = new Map();
     const storageB = { ...f.storage,
         async get(key) { return structuredClone(valuesB.get(key)); },
-        async put(key, value) { valuesB.set(key, structuredClone(value)); } };
+        async put(key, value) {
+            const batch = structuredClone(typeof key === "string" ? { [key]: value } : key);
+            for (const [name, saved] of Object.entries(batch)) valuesB.set(name, saved);
+        } };
     const b = new TriggerSchedule({ ...f.ctx, storage: storageB }, f.env);
     await f.object.fetch(request());
     await b.fetch(request("github_b"));
