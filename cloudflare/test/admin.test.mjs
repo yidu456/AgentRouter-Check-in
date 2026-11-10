@@ -389,10 +389,23 @@ test("simultaneous manual UUIDs serialize, coalesce identical requests and rejec
     const f = fixture(t);
     const results = await Promise.all([f.call("/github_a/run", { request_id: uuid() }),
         f.call("/github_a/run", { request_id: uuid() }), f.call("/github_a/run", { request_id: uuid(2) })]);
-    assert.deepEqual(results.map((response) => response.status), [200, 200, 429]);
-    assert.equal((await results[0].json()).cached, false);
-    assert.equal((await results[1].json()).cached, true);
+    const bodies = await Promise.all(results.map(response => response.json()));
+    // Native async authentication can reorder arrivals before the serialized mutation.
+    if (results[2].status === 200) {
+        assert.deepEqual(results.map(response => response.status), [429, 429, 200]);
+        assert.equal(bodies[2].cached, false);
+        assert.equal(bodies[2].record.id, uuid(2));
+    } else {
+        assert.deepEqual(results.map(response => response.status), [200, 200, 429]);
+        assert.deepEqual(bodies.slice(0, 2).map(body => body.cached).sort(), [false, true]);
+        assert.deepEqual(bodies[0].record, bodies[1].record);
+        assert.equal(bodies[0].record.id, uuid());
+    }
+    for (let i = 0; i < results.length; i++)
+        if (results[i].status === 429) assert.deepEqual(bodies[i], { status: "COOLDOWN" });
     assert.equal(f.http.mock.callCount(), 1);
+    assert.equal(f.values.get("receipts").items.length, 1);
+    assert.equal(f.values.get("history").items.length, 1);
 });
 
 test("manual crash after GitHub acceptance keeps receipt UNKNOWN and cannot resend or notify on restart", async (t) => {
