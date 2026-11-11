@@ -54,19 +54,21 @@ GitHub Actions 使用 Playwright Chromium 和 Xray 代理登录完成签到；�
 
 ## Cloudflare 随机触发与管理
 
-Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个目标支持每天 **1～24 次**固定时间或窗口内随机触发；省略 `schedule` 默认每天一次、北京时间 **01:00～23:00** 随机。Actions 不提前启动等待，多个 GitHub owner 分别配置 PAT。
+Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个目标支持每天 **1～24 个**固定时间或窗口内随机时段；默认每天一次、北京时间 **01:00～23:00** 随机。自动最小间隔可跨多天，届时计划会跳过不满足间隔的日期。Actions 不提前启动等待，多个 GitHub owner 分别配置 PAT。
 
 按 **[Cloudflare 部署指南](cloudflare/README.md)** 完成：
 
 1. Workers Builds 连接自己的仓库：生产分支 `main`，Root directory `cloudflare`，Build `npm test`，Deploy `npm run deploy`。
-2. Worker 运行时设置 `TRIGGER_CONFIG`、GitHub PAT；不要填在 Build variables。令牌创建步骤见 **[令牌指南](cloudflare/API-TOKENS.md)**。
+2. Worker 运行时设置 GitHub PAT Secret（`GITHUB_TOKEN` 或 `GITHUB_TOKEN_*`）；不要填在 Build variables。`TRIGGER_CONFIG` 仅用于可选旧配置导入，不是新建目标的必填项。令牌创建步骤见 **[令牌指南](cloudflare/API-TOKENS.md)**。
 3. 设置 `DEBUG_ACCESS_TOKEN`（隐藏入口值）、`ADMIN_USERNAME` 和 `ADMIN_PASSWORD`。`/` 只有 `hello world`，打开 **`/<入口值>`** 用用户名密码登录，不是固定 `/token`。
-4. 管理页分为 **仓库管理 / 配置检查 / 运行日志 / 使用说明**。在目标卡片展开“排期设置”，编辑固定时间或随机次数/窗口及自动最小间隔；保存到数据库，刷新和重部署保留，可恢复变量初值。操作规则集中在“使用说明”，安全会话有效 12 小时。
+4. 管理页分为 **仓库管理 / 配置检查 / 运行日志 / 使用说明**。在紧凑目标列表点击“新增目标”或目标设置，弹窗填写名称、`owner/repo`、分支/标签、`.yml`/`.yaml` 文件名、凭据引用、开关和排期。凭据下拉只显示可用 Secret 名称，不显示令牌值；间隔可选分钟/小时/天。保存到现有 `SCHEDULES` 数据库，刷新和重部署保留。安全会话仍有效 12 小时，日志单独查看。
 5. 确认各目标默认分支的旧 `on.schedule` 已关闭，保留 `workflow_dispatch`。当前版本默认关闭内置 Cron；如果你另行开启，两套定时都可能运行。
 
 新目标默认开启；首次登录管理页会为已开启且 Token 有效的新目标保存未来日程，无需关闭再开启。刷新不重新抽时间，也不立即触发；缺失的未来 Alarm 可按原时间恢复。明确 `enabled:false` 和已有数据库关闭状态不重置。手动运行不占自动次数，日志删除不改变日程。Worker 企业微信仅说明 GitHub 是否受理触发，不是 Actions 已完成或签到成功。固定/随机填写规则与升级回退注意事项见部署指南。
 
-前端数据库排期优先于变量初值；保存不立即运行。最小间隔为 1～1440 分钟（默认 1），只限制同一目标的自动请求，手动仍为 30 秒冷却。跨日或延迟造成间隔不足的时段会明确跳过，不凑次数补发；GitHub 排队后的实际开始间隔不保证。
+首次认证读取目标目录时，会一次性导入有效的旧 `TRIGGER_CONFIG`；未设置则从空目录开始，非法配置拒绝导入和调度。目录建立后以数据库为准，再改 `TRIGGER_CONFIG` 不会覆盖目标。不要删除 `SCHEDULES` 命名空间：目标、排期、历史、防重复记录和会话都可能丢失。
+
+最小间隔默认 1 分钟，保存为整数 `min_interval_minutes`，范围 1～525600 分钟（365 天）；超过 1440 分钟只能安排每天一个固定时间或随机时段。它限制同一目标的自动请求尝试，可能跳过多天，不保证每隔 N 天恰好运行；手动仍为独立 30 秒冷却。保存不立即运行或撤回已开始的请求；多页面冲突须显式载入保存值，保存结果未知先读取核对，不能重新提交。GitHub 排队后的实际开始间隔不保证。
 
 ## 成功与余额怎么理解
 

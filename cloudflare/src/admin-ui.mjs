@@ -14,21 +14,27 @@ export function adminShell() {
 @media(max-width:780px){#trigger-admin{margin:0;padding:0}#trigger-admin .ar-shell{grid-template-columns:1fr;border-radius:0}#trigger-admin .ar-sidebar{padding:13px 18px;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;border-right:0;border-bottom:1px solid var(--ar-line)}#trigger-admin .ar-nav{display:flex;flex-wrap:wrap;gap:4px}#trigger-admin .ar-nav button{padding:7px 10px}#trigger-admin .ar-nav button[aria-pressed=true]{box-shadow:inset 0 -2px var(--ar-teal)}#trigger-admin .ar-content{padding:22px 20px}}
 @media(max-width:480px){#trigger-admin .ar-brand small{display:none}#trigger-admin .ar-brand{font-size:12px}#trigger-admin .ar-monogram{width:25px;height:25px}#trigger-admin .ar-sidebar{padding:12px;flex-wrap:wrap;gap:8px}#trigger-admin .ar-nav{width:100%;margin-left:0;justify-content:space-between}#trigger-admin .ar-nav button{font-size:12px}#trigger-admin .ar-content{padding:20px 14px}#trigger-admin h1{font-size:24px}#trigger-admin .ar-top{flex-wrap:wrap;gap:10px}#trigger-admin .ar-target-main{grid-template-columns:1fr;padding:16px 14px;gap:12px}#trigger-admin .ar-target-actions{flex-direction:row;justify-content:space-between;align-items:center}#trigger-admin .ar-button,#trigger-admin .ar-switch-label,#trigger-admin .ar-logs summary{min-height:44px}#trigger-admin .ar-log-content{padding:0 14px 12px}#trigger-admin .ar-log-row{grid-template-columns:minmax(0,1fr) auto;gap:4px 8px}#trigger-admin .ar-log-time{grid-column:1;display:flex;gap:8px;flex-wrap:wrap}#trigger-admin .ar-log-body{grid-column:1}#trigger-admin .ar-log-row>button{grid-column:2;grid-row:1/span 2}#trigger-admin .ar-next-time{font-size:17px}#trigger-admin .ar-next-time.paused{font-size:14px}#trigger-admin .ar-section-heading{flex-wrap:wrap}}
 @media(max-width:900px){#trigger-admin .ar-readiness{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:650px){#trigger-admin .ar-config-table,#trigger-admin .ar-config-table caption,#trigger-admin .ar-config-table tbody,#trigger-admin .ar-config-table tr,#trigger-admin .ar-config-table td{display:block;width:100%}#trigger-admin .ar-config-table thead{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}#trigger-admin .ar-config-table tr{margin-bottom:12px;border:1px solid var(--ar-line);border-radius:6px;overflow:hidden}#trigger-admin .ar-config-table td{border:0;padding:8px 12px}#trigger-admin .ar-config-table td:before{content:attr(data-label);display:block;font-size:11px;color:var(--ar-muted)}#trigger-admin .ar-diagnostic summary{min-height:44px}}
+#trigger-admin .ar-shell{display:block}#trigger-admin .ar-sidebar{padding:16px 26px;flex-direction:row;align-items:center;justify-content:space-between;gap:20px;border-right:0;border-bottom:1px solid var(--ar-line)}#trigger-admin .ar-nav{display:flex;flex-wrap:wrap;gap:5px}#trigger-admin .ar-nav button{padding:7px 10px}#trigger-admin .ar-nav button[aria-pressed=true]{box-shadow:inset 0 -2px var(--ar-teal);background:var(--ar-panel)}#trigger-admin .ar-brand small{display:none}
+#trigger-admin .ar-section-tools{display:flex;align-items:center;gap:12px}#trigger-admin .ar-targets[data-targets]{gap:0;border:1px solid var(--ar-line);border-radius:7px;overflow:clip;background:var(--ar-panel)}#trigger-admin .ar-list-head,#trigger-admin .ar-target-main{display:grid;grid-template-columns:minmax(0,1fr) 142px 80px 145px;gap:16px;align-items:start}#trigger-admin .ar-list-head{padding:9px 16px;font-size:11px;color:var(--ar-muted)}#trigger-admin [data-targets] .ar-target{border:0;border-radius:0;border-bottom:1px solid var(--ar-line)}#trigger-admin [data-targets] .ar-target:last-child{border-bottom:0}#trigger-admin .ar-target-main{padding:16px}#trigger-admin .ar-repository{font-size:11px;color:var(--ar-muted);overflow-wrap:anywhere;margin-top:3px}#trigger-admin .ar-metadata{margin:5px 0;gap:3px 10px}#trigger-admin .ar-metadata code{font-size:11px}#trigger-admin .ar-next{display:block}#trigger-admin .ar-next-label{display:none}#trigger-admin .ar-next-time{display:block;font-size:17px;line-height:1.45}#trigger-admin .ar-next-time small{display:block;font-size:11px;color:var(--ar-muted)}#trigger-admin .ar-next-time.paused{font-size:12px}#trigger-admin .ar-state{margin-top:4px;background:none;padding:0;font-size:11px}#trigger-admin .ar-target-actions{min-width:0;display:flex;flex-direction:row;align-items:center;justify-content:flex-end;gap:4px;flex-wrap:wrap}#trigger-admin .ar-target-actions .ar-switch-label{width:100%;justify-content:flex-end;order:3;font-size:11px;min-height:24px}#trigger-admin .ar-card-feedback{font-size:11px;color:var(--ar-warn);padding:0 16px 9px}
+#trigger-admin .ar-editor{width:min(540px,calc(100% - 28px));max-height:calc(100% - 28px);overflow:auto;padding:22px}#trigger-admin .ar-editor-head{display:flex;align-items:center;justify-content:space-between;gap:10px}#trigger-admin .ar-editor-context{margin:0 0 14px;font-size:12px;overflow-wrap:anywhere}#trigger-admin .ar-editor .ar-schedule{border:0;background:none}#trigger-admin .ar-editor .ar-schedule-form{padding:0}#trigger-admin .ar-editor-tabs{display:flex;gap:10px;border-bottom:1px solid var(--ar-line);padding-bottom:7px;margin-bottom:5px}#trigger-admin .ar-editor-tabs button[aria-pressed=true]{background:var(--ar-rail)}#trigger-admin .ar-editor-basic{display:grid;gap:12px}#trigger-admin .ar-editor .ar-schedule-actions{justify-content:flex-end;border-top:1px solid var(--ar-line);padding-top:13px}#trigger-admin .ar-editor .ar-schedule-field input,#trigger-admin .ar-editor .ar-schedule-field select{background:var(--ar-page)}#trigger-admin .ar-editor .ar-schedule-fields{margin-bottom:10px}
+@media(max-width:780px){#trigger-admin .ar-list-head,#trigger-admin .ar-target-main{grid-template-columns:minmax(0,1fr) 116px 65px 126px;gap:10px}#trigger-admin .ar-sidebar{padding:13px 18px;flex-wrap:wrap}}
+@media(max-width:620px){#trigger-admin .ar-list-head{display:none}#trigger-admin .ar-content{padding:18px 13px}#trigger-admin .ar-nav{order:3;width:100%;justify-content:space-between;gap:0}#trigger-admin .ar-nav button{font-size:11px;padding:7px 6px}#trigger-admin .ar-target-main{grid-template-columns:minmax(0,1fr) auto;gap:9px;padding:13px}#trigger-admin .ar-target-main>div:first-child{grid-column:1/-1}#trigger-admin .ar-next{grid-column:1;grid-row:2}#trigger-admin .ar-state{grid-column:1;grid-row:3}#trigger-admin .ar-target-actions{grid-column:2;grid-row:2/4;max-width:130px}#trigger-admin .ar-section-tools{gap:8px}#trigger-admin .ar-target-count{font-size:11px}#trigger-admin .ar-editor{padding:18px}#trigger-admin .ar-editor .ar-schedule-fields{grid-template-columns:1fr 1fr}}
+@media(max-width:360px){#trigger-admin .ar-editor .ar-schedule-fields{grid-template-columns:1fr}#trigger-admin .ar-section-heading h2{font-size:14px}}@media(pointer:coarse){#trigger-admin button,#trigger-admin .ar-button,#trigger-admin .ar-editor input,#trigger-admin .ar-editor select{min-height:44px}#trigger-admin .ar-editor input,#trigger-admin .ar-editor select{font-size:16px}}
 </style>
 <div class="ar-shell"><aside class="ar-sidebar" aria-label="页面导航"><div class="ar-brand"><span class="ar-monogram" aria-hidden="true">AR</span><div>AgentRouter<small>Cloudflare 调度</small></div></div>
 <nav class="ar-nav" aria-label="管理栏目"><button type="button" data-view="repositories" aria-pressed="true" aria-controls="ar-repositories">仓库管理</button><button type="button" data-view="config" aria-pressed="false" aria-controls="ar-config">配置检查</button><button type="button" data-view="logs" aria-pressed="false" aria-controls="ar-logs">运行日志</button><button type="button" data-view="usage" aria-pressed="false" aria-controls="ar-usage">使用说明</button><button type="button" data-action="logout">退出管理</button></nav></aside>
 <div class="ar-content"><header class="ar-top"><div><h1 data-page-title>仓库管理</h1><p class="ar-sub" data-session-expiry></p></div><button type="button" class="ar-button" data-action="refresh">刷新状态</button></header>
-<section id="ar-repositories" data-section="repositories" aria-label="仓库管理"><div class="ar-section-heading"><h2>运行目标</h2><span class="ar-target-count" data-target-count></span></div><div class="ar-targets" data-targets></div></section>
+<section id="ar-repositories" data-section="repositories" aria-label="仓库管理"><div class="ar-section-heading"><h2>运行目标</h2><div class="ar-section-tools"><span class="ar-target-count" data-target-count></span><button type="button" class="ar-button primary" data-action="add-target" disabled>新增目标</button></div></div><div class="ar-list-head"><span>运行目标</span><span>下次触发</span><span>状态</span><span>操作</span></div><div class="ar-targets" data-targets></div></section>
 <section id="ar-config" data-section="config" aria-label="配置检查" hidden><h2>运行时配置</h2><p class="ar-sr-only" data-config-summary aria-live="polite"></p><div class="ar-readiness" data-readiness></div><div data-config-items></div><p class="ar-notice" data-config-advice></p><details class="ar-diagnostic" data-config-details><summary>技术诊断</summary><pre><code data-config-diagnostic></code></pre></details></section>
 <section id="ar-logs" data-section="logs" aria-label="运行日志" hidden><div class="ar-targets" data-logs></div></section>
 <section id="ar-usage" class="ar-usage" data-section="usage" aria-label="使用说明" hidden>
-<article><h2>开始使用</h2><ol><li>在“配置检查”查看 JSON、GitHub 凭据与数据库状态；缺失项在 Cloudflare 的 Variables &amp; Secrets 配置并保存部署。</li><li>在“仓库管理”开启目标，展开“排期设置”，选择模式、时间和最小间隔，再点击“保存排期”。</li><li>查看“下次自动触发”和“当前执行计划”。手动运行须确认；运行记录在“运行日志”查看。</li></ol></article>
+<article><h2>开始使用</h2><ol><li>在“配置检查”查看目标目录、GitHub 凭据与数据库状态；密钥缺失项在 Cloudflare 的 Variables &amp; Secrets 配置并保存部署。</li><li>点击“新增目标”或目标的“设置”。在弹窗的“基本设置”编辑名称、仓库、分支、工作流和 Secret 引用；在“排期设置”编辑模式、时间和间隔，最后点击“保存目标”。新增目标默认允许运行，可在保存前关闭。</li><li>查看“下次触发”，按需展开“运行详情”查看生效排期与执行计划。手动运行须确认；运行记录在“运行日志”查看。</li></ol></article>
 <article><h2>时间与执行计划</h2><p>全部时间为北京时间（Asia/Shanghai）。固定模式每天 1～24 个不同时间点；随机模式每天 1～24 次，在包含两端、不跨日的窗口内抽取时间。每天、每个目标独立随机，刷新不重新抽取。</p><p>“当前执行计划”是当前生效的时段，日期、时间和状态分开显示。“上一计划结果”只保留上一份计划最后一个时段的结果，不是上次实际运行，也不是完整历史；被替换且未执行的旧时间不再展示。</p><p>次数是每日计划次数，不是成功次数或累计配额。保存、刷新、暂停后重开不补发过期任务；延迟跨过多个时段时只尝试最近一个，跨日时段跳过。窗口限制计划时间，不能保证平台实际开始时间。</p></article>
-<article><h2>间隔与手动运行</h2><p>自动最小间隔为 1～1440 分钟，默认 1 分钟；固定时间还需满足末次到次日首次的间隔。随机次数、窗口和间隔无法同时满足时会拒绝保存，不会减少次数。</p><p>间隔从同一目标的 Cloudflare 自动请求尝试时刻计算，失败或结果未知也计入；不同目标独立。间隔不足的时段跳过，不补发、不通知，不表示签到失败。GitHub 排队后的实际开始间隔不由此保证。</p><p>手动运行只受 30 秒冷却限制，不占用自动时段，也不改变自动间隔基线。未收到完整响应时结果可能未知，不要创建新请求重复运行；界面保留原请求 ID 以安全确认。</p><p>暂停、修改排期、跨日、删除日志不会清除已确认的自动基线；缺失或无法关联的旧记录不能恢复，首次自动尝试后建立基线。</p></article>
-<article><h2>保存与配置来源</h2><p>生效排期优先使用数据库设置，其次是 TRIGGER_CONFIG 变量初值；省略排期默认每天一次、01:00～23:00 随机。保存值在刷新、换设备和重部署后保留，不会立即运行或开启已关闭的目标。</p><p>“配置检查”只展示变量初值；“仓库管理”展示生效值。修改变量不会覆盖已保存的数据库排期；“恢复变量配置”经确认后撤销覆盖。更换仓库、工作流或分支不会转移旧身份的设置。</p><p>未保存草稿只在本页内存，点击“刷新状态”保留，浏览器重载或退出会丢失。多页面修改出现冲突时，核对新值并选择“载入已保存值 / 丢弃草稿”，不会自动覆盖。</p><p>保存响应未知时，可能已经写入数据库但 Alarm 尚未设置成功；先读取实际来源、版本与时间，不盲目重复提交。配置检查仅验证格式和存在性，不验证 GitHub 权限、数据库健康或机器人送达。</p></article>
+<article><h2>间隔与手动运行</h2><p>自动最小间隔支持整数分钟、小时或天，为 1 分钟～365 天，默认 1 分钟；超过一天只支持每天／窗口一个时段。一天以内的固定时间还需满足末次到次日首次的间隔。随机次数、窗口和间隔无法同时满足时会拒绝保存，不会减少次数。</p><p>间隔从同一目标的 Cloudflare 自动请求尝试时刻计算，失败或结果未知也计入；不同目标独立。长间隔的未来计划会等待已知的下次允许尝试时间。间隔不足的时段跳过，不补发、不通知，不表示签到失败。GitHub 排队后的实际开始间隔不由此保证。</p><p>手动运行只受 30 秒冷却限制，不占用自动时段，也不改变自动间隔基线。未收到完整响应时结果可能未知，不要创建新请求重复运行；界面保留原请求 ID 以安全确认。</p><p>暂停、修改排期、跨日、删除日志不会清除已确认的自动基线；缺失或无法关联的旧记录不能恢复，首次自动尝试后建立基线。</p></article>
+<article><h2>保存与配置来源</h2><p>首次打开管理页会将有效的 TRIGGER_CONFIG 导入数据库目标目录；未配置变量时从空目录开始，随后直接在页面新增目标。导入后不再需要修改仓库 JSON，修改变量不会覆盖目录。密钥值始终保留在 Cloudflare Secrets，页面只保存引用名称。</p><p>“配置检查”展示已保存目录定义，“仓库管理”和弹窗排期展示生效值，包括导入前已有的单目标覆盖。弹窗统一保存基本信息、开关和排期；目录目标不提供“恢复变量配置”。省略排期默认每天一次、01:00～23:00 随机。保存在刷新、换设备和重部署后保留，不会立即运行或补发。</p><p>更换仓库、工作流或分支不会转移旧身份的设置，不撤销已经提交或执行中的请求。历史记录与防重复记录保留。未保存草稿只在本页内存，刷新状态保留；关闭弹窗或按 Escape 丢弃普通未保存编辑，冲突或结果未知的草稿仍需显式载入保存值。浏览器重载或退出会丢失草稿。多页面修改出现冲突时，核对并选择“载入已保存值 / 丢弃草稿”，不会自动覆盖。</p><p>保存响应未知时可能已写入数据库，界面只读取实际目录与生效状态，不重复提交；草稿保持阻止保存，核对后显式载入已保存值。配置检查仅验证格式和存在性，不验证 GitHub 权限、数据库健康或机器人送达。</p></article>
 <article><h2>日志、通知与登录</h2><p>日志按仓库分类，每个工作流／分支目标保留最近 20 条。“GitHub 已受理”只表示触发请求被接受，不表示 Actions 完成或签到成功；最终余额汇总由 Actions 发送，Worker 企业微信只报告触发结果。</p><p>删除日志不改变日程、开关或防重复记录，也不会删除 GitHub 和 Cloudflare 平台日志。正式使用 Cloudflare 前，停用目标仓库旧的 Actions 定时任务，避免重复触发。</p><p>Cookie 会话固定有效 12 小时，刷新或返回页面可恢复，不自动续期。退出撤销当前设备会话；修改用户名、密码或入口值会使旧会话失效。页面不保存密码到浏览器存储；隐藏路径不是认证防线，不要分享入口或密码。</p></article>
 </section><p class="ar-feedback" role="status" aria-live="polite" data-feedback></p><footer class="ar-bottom"><span>北京时间 UTC+8</span></footer></div></div>
-<dialog class="ar-dialog" aria-labelledby="ar-dialog-title" data-confirm-dialog><h2 id="ar-dialog-title" data-dialog-title></h2><code class="ar-dialog-target" data-dialog-target></code><p data-dialog-message></p><p data-dialog-note></p><div class="ar-dialog-actions"><button type="button" class="ar-button" data-cancel>取消</button><button type="button" class="ar-button primary" data-confirm>确认</button></div></dialog></section>`;
+<dialog class="ar-dialog ar-editor" aria-labelledby="ar-editor-title" data-target-editor></dialog><dialog class="ar-dialog" aria-labelledby="ar-dialog-title" data-confirm-dialog><h2 id="ar-dialog-title" data-dialog-title></h2><code class="ar-dialog-target" data-dialog-target></code><p data-dialog-message></p><p data-dialog-note></p><div class="ar-dialog-actions"><button type="button" class="ar-button" data-cancel>取消</button><button type="button" class="ar-button primary" data-confirm>确认</button></div></dialog></section>`;
 }
 
 export function adminClient() {
@@ -50,6 +56,8 @@ export function adminClient() {
     const diagnostic = root.querySelector("[data-config-diagnostic]");
     const logList = root.querySelector("[data-logs]");
     const dialog = root.querySelector("[data-confirm-dialog]");
+    const editor = root.querySelector("[data-target-editor]");
+    const addButton = root.querySelector('[data-action="add-target"]');
     const refreshButton = root.querySelector('[data-action="refresh"]');
     const logoutButton = root.querySelector('[data-action="logout"]');
     const errors = {
@@ -76,6 +84,12 @@ export function adminClient() {
         SCHEDULE_CONFLICT: "排期已被其他页面修改。草稿保留；请刷新并核对，显式载入已保存值后再编辑。",
         TARGET_CHANGED: "目标身份已改变。草稿不能转移，请刷新并核对新的目标。",
         SCHEDULE_REVISION_LIMIT: "排期版本已达上限，不能继续保存或恢复；请联系管理员。",
+        CATALOG_CONFLICT: "目标已被其他页面修改。草稿保留；请核对并显式载入已保存值。",
+        CATALOG_INVALID: "目标目录不可用，已停用管理操作。",
+        CATALOG_REVISION_LIMIT: "目标目录版本已达上限，不能继续保存。",
+        TARGET_INVALID: "目标或排期未通过校验，请修正输入后保存。",
+        CREDENTIAL_INVALID: "请选择已配置且格式合法的 GitHub Secret 名称；密钥只在 Cloudflare 配置。",
+        CATALOG_MANAGED: "此目标由目录管理，请刷新后在目标设置中保存。",
     };
     const notifications = {
         NOTIFY_UNKNOWN: "企业微信结果未知，不自动重试",
@@ -88,6 +102,9 @@ export function adminClient() {
     let session = 0;
     let pending = null;
     let loadError = "";
+    let catalog = null;
+    let selected = null;
+    let opener = null;
     const uncertain = new Map();
     const drafts = new Map();
     const dateFormat = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric",
@@ -103,17 +120,18 @@ export function adminClient() {
         const keys = value?.mode === "fixed" ? ["mode", "times"] : value?.mode === "random" ? ["mode", "count", "window"] : null;
         if (!keys || !exactKeys(value, Object.hasOwn(value, "min_interval_minutes") ? [...keys, "min_interval_minutes"] : keys)) return false;
         const gap = Object.hasOwn(value, "min_interval_minutes") ? value.min_interval_minutes : 1;
-        if (!Number.isInteger(gap) || gap < 1 || gap > 1440) return false;
+        if (!Number.isInteger(gap) || gap < 1 || gap > 525600) return false;
         if (value.mode === "fixed") {
             if (!Array.isArray(value.times) || value.times.length < 1 || value.times.length > 24
                 || !value.times.every(clock) || new Set(value.times).size !== value.times.length) return false;
             const minutes = [...value.times].sort().map(minute);
+            if (gap > 1440) return minutes.length === 1;
             return minutes.every((at, index) => (minutes[index + 1] ?? minutes[0] + 1440) - at >= gap);
         }
         return Number.isInteger(value.count) && value.count >= 1 && value.count <= 24
             && exactKeys(value.window, ["start", "end"]) && clock(value.window.start) && clock(value.window.end)
             && value.window.start <= value.window.end && (value.count - 1) * gap <= minute(value.window.end) - minute(value.window.start)
-            && value.count * gap <= 1440;
+            && (gap > 1440 ? value.count === 1 : value.count * gap <= 1440);
     };
     const validSlot = (slot) => slot && typeof slot.at === "string" && Number.isFinite(Date.parse(slot.at))
         && typeof slot.attempted === "boolean" && (knownResult(slot.result)
@@ -159,6 +177,10 @@ export function adminClient() {
             || typeof target.schedule_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(target.schedule_date))
         && (target.slots === undefined || Array.isArray(target.slots) && target.slots.length <= 24 && target.slots.every(validSlot))
         && (!Object.hasOwn(target, "schedule_last") || validLast(target.schedule_last))
+        && (["name", "token_secret", "catalog_revision"].every(key => target[key] === undefined)
+            || typeof target.name === "string" && target.name.trim() === target.name && target.name.length >= 1 && target.name.length <= 64
+                && !/[\x00-\x1f\x7f]/.test(target.name) && credentialName(target.token_secret)
+                && Number.isSafeInteger(target.catalog_revision) && target.catalog_revision >= 0)
         && validMetadata(target);
 
     function element(tag, className, text) {
@@ -197,6 +219,12 @@ export function adminClient() {
         targets = [];
         pending = null;
         loadError = "";
+        catalog = null;
+        selected = null;
+        opener = null;
+        editor.close();
+        editor.replaceChildren();
+        addButton.disabled = true;
         uncertain.clear();
         drafts.clear();
         list.replaceChildren();
@@ -246,7 +274,7 @@ export function adminClient() {
         if (!response.ok) {
             const error = new Error(Object.hasOwn(errors, data?.status) ? data.status : "RESPONSE_INVALID");
             error.status = response.status;
-            if (data?.status === "SCHEDULE_INVALID") error.diagnostic = safeDiagnostic(data.error);
+            if (["SCHEDULE_INVALID", "TARGET_INVALID"].includes(data?.status)) error.diagnostic = safeDiagnostic(data.error);
             throw error;
         }
         return data;
@@ -310,14 +338,14 @@ export function adminClient() {
         SCHEDULE_DUPLICATE: "固定时间不能重复，请删除重复分钟。",
         SCHEDULE_COUNT: "填写 1～24 的整数，且不超过窗口内可选分钟数。",
         SCHEDULE_CAPACITY: "随机次数与最小间隔不能超过窗口分钟容量或每日 1440 分钟，请减少次数、缩短间隔或扩大窗口。",
-        SCHEDULE_INTERVAL: "最小间隔填写 1～1440 的整数分钟；只约束自动触发。",
+        SCHEDULE_INTERVAL: "最小间隔填写 1～525600 的整数分钟（最多 365 天）；超过一天只支持一个时段，只约束自动触发。",
         SCHEDULE_SPACING: "固定时间须满足最小间隔，包括最后一次至次日第一次的循环间隔。",
         SCHEDULE_WINDOW: "窗口时间填写 HH:mm，start 不晚于 end；不支持跨日窗口。",
         CONFIG_INVALID: "按字段位置修正配置后保存部署。",
     };
     function safeDiagnostic(value) {
         return { field: typeof value?.field === "string"
-            && /^(?:TRIGGER_CONFIG|config|version|schedule(?:\.(?:mode|count|min_interval_minutes|times(?:\[\d{1,2}\])?|window(?:\.(?:start|end))?))?|targets(?:\[(?:[0-9]|[1-9][0-9])\](?:\.(?:id|repository|workflow|ref|token_secret|enabled|schedule(?:\.(?:mode|count|min_interval_minutes|times(?:\[\d{1,2}\])?|window(?:\.(?:start|end))?))?))?)?)$/.test(value.field)
+            && /^(?:TRIGGER_CONFIG|config|version|target(?:\.(?:id|name|repository|workflow|ref|token_secret|enabled|schedule(?:\.(?:mode|count|min_interval_minutes|times(?:\[\d{1,2}\])?|window(?:\.(?:start|end))?))?))?|schedule(?:\.(?:mode|count|min_interval_minutes|times(?:\[\d{1,2}\])?|window(?:\.(?:start|end))?))?|targets(?:\[(?:[0-9]|[1-9][0-9])\](?:\.(?:id|repository|workflow|ref|token_secret|enabled|schedule(?:\.(?:mode|count|min_interval_minutes|times(?:\[\d{1,2}\])?|window(?:\.(?:start|end))?))?))?)?)$/.test(value.field)
             ? value.field : "config", code: Object.hasOwn(hints, value?.code) ? value.code : "CONFIG_INVALID" };
     }
     function renderConfiguration(health) {
@@ -414,6 +442,7 @@ export function adminClient() {
             throw new Error("RESPONSE_INVALID");
         for (const [id, draft] of drafts) {
             const target = data.targets.find(item => item.id === id);
+            if (id === "__new") continue;
             if (!target || !target.error && target.target_binding !== draft.binding) drafts.delete(id);
             else if (!target.error && target.schedule_revision !== draft.revision && !draft.blocked) {
                 draft.blocked = true;
@@ -422,27 +451,90 @@ export function adminClient() {
         }
         targets = data.targets;
     }
+    const credentialName = value => typeof value === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(value)
+        && !["DEBUG_ACCESS_TOKEN", "ADMIN_USERNAME", "ADMIN_PASSWORD", "WECOM_WEBHOOK_URL", "TRIGGER_CONFIG", "SCHEDULES"].includes(value);
+    const validConfigTarget = target => {
+        const keys = ["id", "name", "repository", "workflow", "ref", "token_secret", "enabled"];
+        return exactKeys(target, Object.hasOwn(target ?? {}, "schedule") ? [...keys, "schedule"] : keys)
+            && typeof target.id === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.id)
+            && typeof target.name === "string" && target.name.trim() === target.name && target.name.length >= 1 && target.name.length <= 64
+            && !/[\x00-\x1f\x7f]/.test(target.name)
+            && typeof target.repository === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/.test(target.repository)
+            && typeof target.workflow === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\.ya?ml$/.test(target.workflow)
+            && typeof target.ref === "string" && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(target.ref)
+            && !/\.\.|\/\/|\/$|\.$|(?:^|\/)\.|\.lock(?:\/|$)/.test(target.ref)
+            && typeof target.token_secret === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(target.token_secret)
+            && typeof target.enabled === "boolean" && (target.schedule === undefined || validSchedule(target.schedule));
+    };
+    function acceptCatalog(data) {
+        if (!exactKeys(data, ["status", "version", "revision", "items", "credentials"]) || data.status !== "OK" || data.version !== 1
+            || !Number.isSafeInteger(data.revision) || data.revision < 0 || !Array.isArray(data.items) || data.items.length > 100
+            || !data.items.every(validConfigTarget) || new Set(data.items.map(item => item.id)).size !== data.items.length
+            || new Set(data.items.map(item => JSON.stringify([item.repository.toLowerCase(), item.workflow, item.ref]))).size !== data.items.length
+            || !Array.isArray(data.credentials) || !data.credentials.every(credentialName)
+            || new Set(data.credentials).size !== data.credentials.length) throw new Error("RESPONSE_INVALID");
+        for (const draft of drafts.values()) if (draft.catalogRevision !== undefined && draft.catalogRevision !== data.revision) {
+            draft.blocked = true; draft.message = errors.CATALOG_CONFLICT;
+        }
+        catalog = data;
+    }
+    async function readManagedTargets() {
+        acceptCatalog(await request("/api/admin/catalog"));
+        acceptTargets(await request("/api/admin/targets"));
+    }
+    function closeEditor(discard = false) {
+        if (discard && !busy && !drafts.get(selected)?.blocked) drafts.delete(selected);
+        selected = null; editor.close(); editor.replaceChildren();
+        if (opener?.isConnected !== false) opener?.focus();
+        opener = null;
+    }
+    function openEditor(target, from) {
+        if (busy || !verified || !catalog || target.error) return;
+        selected = target.id; opener = from ?? document.activeElement;
+        const draft = scheduleDraft(target); draft.tab = "basic"; draft.open = true; drafts.set(target.id, draft);
+        renderEditor(); editor.showModal();
+    }
+    function renderEditor() {
+        if (!selected || !verified) return;
+        const target = selected === "__new" ? { id: "__new", enabled: true, schedule: { mode: "random", count: 1, window: { start: "01:00", end: "23:00" } } }
+            : targets.find(item => item.id === selected);
+        if (!target || target.error || selected !== "__new" && !editable(target)) { closeEditor(); return; }
+        const draft = scheduleDraft(target);
+        const head = element("div", "ar-editor-head");
+        const title = element("h2", "", selected === "__new" ? "新增目标" : "目标设置"); title.id = "ar-editor-title";
+        head.append(title, button("关闭", "editor-close", () => closeEditor(true), false, "quiet"));
+        const context = element("p", "ar-editor-context", selected === "__new" ? "新目标 · 保存后生效，不立即运行"
+            : `${target.name ?? target.id} · ${target.repository} / ${target.workflow} / ${target.ref} · ${target.id}`);
+        editor.replaceChildren(head, context, scheduleEditor(target));
+    }
     function scheduleDraft(target) {
         const schedule = target.schedule;
+        const config = catalog?.items.find(item => item.id === target.id);
+        const gap = schedule.min_interval_minutes ?? 1;
+        const unit = config || target.id === "__new" ? gap % 1440 === 0 ? "day" : gap % 60 === 0 ? "hour" : "minute" : "minute";
         return drafts.get(target.id) ?? { binding: target.target_binding, revision: target.schedule_revision,
+            ...(config || target.id === "__new" ? { catalogRevision: catalog.revision, name: config?.name ?? "", repository: config?.repository ?? "",
+                workflow: config?.workflow ?? "Checkin.yml", ref: config?.ref ?? "main", token_secret: config?.token_secret ?? catalog.credentials[0] ?? "",
+                enabled: target.enabled, tab: "basic" } : {}),
             mode: schedule.mode, times: [...(schedule.times ?? ["08:30"])], count: String(schedule.count ?? 1),
             start: schedule.window?.start ?? "01:00", end: schedule.window?.end ?? "23:00",
-            interval: String(schedule.min_interval_minutes ?? 1), open: false, blocked: false, message: "" };
+            interval: String(gap / { minute: 1, hour: 60, day: 1440 }[unit]), intervalUnit: unit, open: false, blocked: false, message: "" };
     }
     function scheduleEditor(target) {
         const current = session;
         const draft = scheduleDraft(target);
-        const disabled = busy || !editable(target);
-        const details = element("details", "ar-schedule");
+        const managed = draft.catalogRevision !== undefined;
+        const disabled = busy || target.id !== "__new" && !editable(target);
+        const details = element("div", "ar-schedule");
         details.dataset.scheduleTargetId = target.id;
         details.open = draft.open;
-        details.append(element("summary", "", "排期设置 · " + (target.schedule_source === "database" ? "数据库设置" : "变量配置")));
         details.addEventListener("toggle", () => {
             if (current !== session || !verified || details.isConnected === false) return;
             draft.open = details.open;
             if (details.open || drafts.has(target.id)) drafts.set(target.id, draft);
         });
         const form = element("form", "ar-schedule-form");
+        form.noValidate = true;
         form.dataset.scheduleForm = target.id;
         const count = element("output", "ar-check-note");
         const updateCount = () => { count.textContent = `计划 ${draft.mode === "fixed" ? draft.times.length : draft.count} 次/天`; };
@@ -457,14 +549,14 @@ export function adminClient() {
             if (!draft.blocked) { draft.message = "草稿未保存"; message.textContent = draft.message; }
             updateCount();
         };
-        const input = (name, labelText, type, value, handler, min, max) => {
+        const input = (name, labelText, type, value, handler, min, max, options = [["random", "随机"], ["fixed", "固定"]]) => {
             const label = element("label", "ar-schedule-field", labelText);
             const control = element(type === "select" ? "select" : "input");
             control.id = "ar-schedule-" + target.id + "-" + name;
             label.htmlFor = control.id;
             control.dataset.scheduleField = name;
             if (type === "select") {
-                for (const [value, text] of [["random", "随机"], ["fixed", "固定"]]) {
+                for (const [value, text] of options) {
                     const option = element("option", "", text); option.value = value; control.append(option);
                 }
             } else { control.type = type; control.required = true; }
@@ -473,13 +565,37 @@ export function adminClient() {
             if (min !== undefined) { control.min = String(min); control.max = String(max); control.step = "1"; }
             control.setAttribute("aria-describedby", message.id);
             control.addEventListener(type === "select" ? "change" : "input", () => {
-                if (busy) return;
+                if (busy || current !== session || !verified || control.isConnected === false) return;
                 handler(control.value); remember();
                 if (type === "select") { render(); document.getElementById(control.id)?.focus(); }
             });
             label.append(control);
             return label;
         };
+        if (managed) {
+            const tabs = element("div", "ar-editor-tabs");
+            for (const [value, title] of [["basic", "基本设置"], ["schedule", "排期设置"]]) {
+                const tab = button(title, "tab-" + value, () => {
+                    if (current !== session || !verified || busy) return;
+                    draft.tab = value; drafts.set(target.id, draft); renderEditor();
+                }, busy, "quiet");
+                tab.setAttribute("aria-pressed", String((draft.tab ?? "basic") === value)); tabs.append(tab);
+            }
+            form.append(tabs);
+            const basic = element("div", "ar-editor-basic"); basic.hidden = draft.tab === "schedule";
+            basic.append(input("name", "显示名称", "text", draft.name, value => { draft.name = value; }),
+                input("repository", "GitHub 仓库（owner/repo）", "text", draft.repository, value => { draft.repository = value; }),
+                input("ref", "分支 / ref", "text", draft.ref, value => { draft.ref = value; }),
+                input("workflow", "工作流（.yml / .yaml）", "text", draft.workflow, value => { draft.workflow = value; }),
+                input("token_secret", "GitHub Secret 名称（不填写密钥）", "select", draft.token_secret, value => { draft.token_secret = value; }, undefined, undefined,
+                    [...new Set([draft.token_secret, ...catalog.credentials])].map(value => [value, value || "暂无可用凭据，请在 Cloudflare 配置"])));
+            const enabled = element("label", "ar-switch-label", "允许运行"); const toggle = element("input", "ar-switch-input");
+            toggle.type = "checkbox"; toggle.checked = draft.enabled; toggle.disabled = disabled; toggle.dataset.scheduleField = "enabled";
+            toggle.addEventListener("change", () => { if (current === session && verified && !busy && toggle.isConnected !== false) { draft.enabled = toggle.checked; remember(); } });
+            enabled.append(toggle); basic.append(enabled, element("p", "ar-check-note", "密钥仍由 Cloudflare Secrets 管理；这里只保存引用名称。修改身份不会撤销已提交的运行。"));
+            form.append(basic);
+        }
+        const schedulePanel = element("div", "ar-editor-schedule"); schedulePanel.hidden = managed && draft.tab !== "schedule";
         const fields = element("div", "ar-schedule-fields");
         fields.append(input("mode", "模式", "select", draft.mode, value => { draft.mode = value; }));
         if (draft.mode === "random") {
@@ -487,8 +603,11 @@ export function adminClient() {
                 input("start", "窗口开始（北京时间）", "time", draft.start, value => { draft.start = value; }),
                 input("end", "窗口结束（北京时间）", "time", draft.end, value => { draft.end = value; }));
         }
-        fields.append(input("interval", "自动最小间隔（分钟）", "number", draft.interval, value => { draft.interval = value; }, 1, 1440));
-        form.append(fields);
+        fields.append(input("interval", "自动最小间隔（整数）", "number", draft.interval, value => { draft.interval = value; }, 1,
+            { minute: 525600, hour: 8760, day: 365 }[draft.intervalUnit]),
+            input("interval-unit", "间隔单位", "select", draft.intervalUnit, value => { draft.intervalUnit = value; }, undefined, undefined,
+                [["minute", "分钟"], ["hour", "小时"], ["day", "天"]]));
+        schedulePanel.append(fields, element("p", "ar-check-note", "1 分钟～365 天；超过一天只能安排一个时段。自动尝试间隔独立于手动运行；保存不立即运行或补发。"));
         if (draft.mode === "fixed") {
             const times = element("div", "ar-schedule-times");
             draft.times.forEach((time, index) => {
@@ -507,23 +626,25 @@ export function adminClient() {
                 draft.times.push(""); remember(); render();
                 document.getElementById("ar-schedule-" + target.id + "-time-" + (draft.times.length - 1))?.focus();
             }, disabled || draft.times.length >= 24));
-            form.append(times);
+            schedulePanel.append(times);
         }
+        form.append(schedulePanel);
         const actions = element("div", "ar-schedule-actions");
-        const save = button("保存排期", "schedule-save", () => {}, disabled || draft.blocked
-            || target.schedule_revision === Number.MAX_SAFE_INTEGER, "primary");
+        const save = button(managed ? "保存目标" : "保存排期", "schedule-save", () => {}, disabled || draft.blocked
+            || (managed ? draft.catalogRevision : target.schedule_revision) === Number.MAX_SAFE_INTEGER, "primary");
         save.type = "submit";
-        actions.append(save, button("恢复变量配置", "schedule-reset", () => {
+        actions.append(save);
+        if (!managed) actions.append(button("恢复变量配置", "schedule-reset", () => {
             if (disabled || draft.blocked) return;
             drafts.set(target.id, draft); confirm("schedule/reset", target);
-        }, disabled || draft.blocked || target.schedule_revision === Number.MAX_SAFE_INTEGER),
-        button("载入已保存值 / 丢弃草稿", "schedule-load", () => loadSavedSchedule(target), disabled, "quiet"));
+        }, disabled || draft.blocked || target.schedule_revision === Number.MAX_SAFE_INTEGER));
+        actions.append(button("载入已保存值 / 丢弃草稿", "schedule-load", () => loadSavedSchedule(target), disabled, "quiet"));
         form.append(count, message, actions);
         form.addEventListener("submit", event => {
             event.preventDefault();
-            if (disabled || draft.blocked) return;
+            if (disabled || draft.blocked || busy || current !== session || !verified || form.isConnected === false) return;
             remember();
-            void saveSchedule(target, false);
+            void (managed ? saveCatalogTarget(target) : saveSchedule(target, false));
         });
         details.append(form);
         return details;
@@ -533,7 +654,9 @@ export function adminClient() {
         const current = session;
         busy = true; render();
         try {
-            acceptTargets(await request("/api/admin/targets"));
+            if (drafts.get(target.id)?.catalogRevision !== undefined) await readManagedTargets();
+            else acceptTargets(await request("/api/admin/targets"));
+            if (target.id === "__new") { drafts.delete("__new"); renderEditor(); announce("已丢弃新目标草稿。"); return; }
             const saved = targets.find(item => item.id === target.id);
             if (!saved || !editable(saved)) throw new Error(saved?.error ?? "TARGET_NOT_FOUND");
             drafts.delete(target.id);
@@ -544,6 +667,75 @@ export function adminClient() {
             if (current === session) { busy = false; render(); }
         }
     }
+    function draftSchedule(draft) {
+        const amount = Number(draft.interval), factor = { minute: 1, hour: 60, day: 1440 }[draft.intervalUnit];
+        if (!Number.isInteger(amount) || amount < 1 || !factor || amount * factor > 525600) throw new Error("SCHEDULE_INVALID");
+        const gap = amount * factor;
+        const schedule = { mode: draft.mode, ...(draft.mode === "fixed" ? { times: [...draft.times].sort() }
+            : { count: Number(draft.count), window: { start: draft.start, end: draft.end } }),
+            ...(gap === 1 ? {} : { min_interval_minutes: gap }) };
+        if (!validSchedule(schedule)) throw new Error("SCHEDULE_INVALID");
+        return schedule;
+    }
+    const sameConfig = (left, right) => ["name", "repository", "workflow", "ref", "token_secret", "enabled"].every(key => left[key] === right[key])
+        && left.schedule?.mode === right.schedule?.mode && (left.schedule?.min_interval_minutes ?? 1) === (right.schedule?.min_interval_minutes ?? 1)
+        && (left.schedule?.mode === "fixed" ? JSON.stringify(left.schedule.times) === JSON.stringify(right.schedule.times)
+            : left.schedule?.count === right.schedule?.count && left.schedule?.window.start === right.schedule?.window.start && left.schedule?.window.end === right.schedule?.window.end);
+    async function saveCatalogTarget(target) {
+        const draft = drafts.get(target.id);
+        if (!draft || draft.blocked || busy || !verified || !csrf || !catalog || draft.catalogRevision !== catalog.revision) return;
+        const current = session;
+        let body;
+        try {
+            const item = { ...(target.id === "__new" ? {} : { id: target.id }), name: draft.name, repository: draft.repository,
+                ref: draft.ref, workflow: draft.workflow, token_secret: draft.token_secret, enabled: draft.enabled, schedule: draftSchedule(draft) };
+            if (!validConfigTarget({ ...item, id: target.id === "__new" ? "new" : target.id })) throw new Error("TARGET_INVALID");
+            if (!catalog.credentials.includes(item.token_secret)) throw new Error("CREDENTIAL_INVALID");
+            body = { revision: draft.catalogRevision, target: item };
+        } catch (error) {
+            draft.message = errors[error.message] + (error.message === "SCHEDULE_INVALID" ? " " + hints.SCHEDULE_INTERVAL : "");
+            render(); announce(draft.message); return;
+        }
+        busy = true; render();
+        let message;
+        try {
+            const data = await request("/api/admin/catalog", body);
+            if (!exactKeys(data, ["status", "revision", "target"]) || data.status !== "CATALOG_UPDATED" || data.revision !== body.revision + 1
+                || !validConfigTarget(data.target) || target.id !== "__new" && data.target.id !== target.id || !sameConfig(data.target, body.target))
+                throw new Error("TRANSPORT_UNKNOWN");
+            await readManagedTargets();
+            const saved = targets.find(item => item.id === data.target.id);
+            if (!saved || !editable(saved)) throw new Error("TRANSPORT_UNKNOWN");
+            drafts.delete(target.id);
+            if (selected === target.id) closeEditor();
+            message = "目标已保存，未触发运行。";
+        } catch (error) {
+            if (current !== session || error.message === "SESSION_ENDED") return;
+            message = errors[error.message] ?? errors.RESPONSE_INVALID;
+            if (["CATALOG_CONFLICT", "CATALOG_REVISION_LIMIT", "TARGET_CHANGED"].includes(error.message)) draft.blocked = true;
+            else if (error.message === "TARGET_INVALID") {
+                const issue = error.diagnostic ?? safeDiagnostic(null); message += ` ${issue.field}：${hints[issue.code]}`;
+            } else if (error.status === 503 || ["TRANSPORT_UNKNOWN", "RESPONSE_INVALID"].includes(error.message)) {
+                draft.blocked = true;
+                message = "保存结果未确认，可能已写入目录；Alarm / 自动状态仍未知。正在读取实际值，不会重新提交；草稿保留。";
+                try {
+                    await readManagedTargets();
+                    const saved = catalog.items.find(item => target.id === "__new" ? sameConfig(item, body.target) : item.id === target.id);
+                    const runtime = targets.find(item => item.id === saved?.id);
+                    if (!runtime || !editable(runtime)) throw new Error("RESPONSE_INVALID");
+                    message += sameConfig(saved, body.target) ? " 已读回匹配的目录值；请核对生效状态并载入已保存值。"
+                        : " 已读回目录，提交值尚未确认；请核对并载入已保存值。";
+                } catch {
+                    if (current !== session) return;
+                    message += " 实际设置读取也未确认，请稍后刷新再核对。";
+                }
+            }
+            drafts.set(target.id, draft); draft.message = message;
+        } finally {
+            if (current === session) { busy = false; render(); }
+        }
+        if (current === session && verified) announce(message);
+    }
     async function saveSchedule(target, reset) {
         const draft = drafts.get(target.id) ?? scheduleDraft(target);
         if (!csrf || !verified || busy || !editable(target) || draft.blocked
@@ -551,9 +743,10 @@ export function adminClient() {
             || draft.revision === Number.MAX_SAFE_INTEGER) return;
         const current = session;
         const body = { binding: draft.binding, revision: draft.revision };
-        if (!reset) body.schedule = { mode: draft.mode, ...(draft.mode === "fixed" ? { times: [...draft.times].sort() }
-            : { count: Number(draft.count), window: { start: draft.start, end: draft.end } }),
-            ...(Number(draft.interval) === 1 ? {} : { min_interval_minutes: Number(draft.interval) }) };
+        if (!reset) {
+            try { body.schedule = draftSchedule(draft); }
+            catch { draft.message = errors.SCHEDULE_INVALID + " " + hints.SCHEDULE_INTERVAL; drafts.set(target.id, draft); render(); announce(draft.message); return; }
+        }
         drafts.set(target.id, draft);
         busy = true; render();
         let message;
@@ -599,12 +792,13 @@ export function adminClient() {
             const tone = target.error || target.token_state !== "configured" ? "warning" : !target.enabled ? "paused" : "";
             const article = element("article", "ar-target");
             article.dataset.targetId = target.id;
-            article.setAttribute("aria-label", target.repository);
+            article.setAttribute("aria-label", target.name ?? target.repository);
             const main = element("div", "ar-target-main");
             const description = element("div");
             const heading = element("div", "ar-repo-line");
-            heading.append(element("h3", "", target.repository), element("span", "ar-state " + tone,
-                target.error ? "状态不可用" : !target.enabled ? "已关闭" : target.token_state === "configured" ? "已开启" : "Token 不可用"));
+            heading.append(element("h3", "", target.name ?? target.id));
+            const state = element("span", "ar-state " + tone,
+                target.error ? "状态不可用" : !target.enabled ? "已关闭" : target.token_state === "configured" ? "已开启" : "Token 不可用");
             const metadata = element("div", "ar-metadata");
             for (const [label, value] of [["工作流", target.workflow], ["分支", target.ref], ["Token",
                 { configured: "已配置（权限未验证）", missing: "未配置", invalid: "格式不合法" }[target.token_state]]]) {
@@ -619,17 +813,20 @@ export function adminClient() {
             time.dataset.next = "";
             if (runnable && target.next_run) time.dateTime = target.next_run;
             next.append(element("span", "ar-next-label", "下次自动触发"), time);
-            description.append(heading, metadata, next);
+            description.append(heading, element("p", "ar-repository", target.repository), metadata);
             if (target.error) description.append(element("p", "ar-field-error", errors[target.error]));
+            const details = element("details", "ar-run-details");
+            details.append(element("summary", "", "运行详情"));
             if (editable(target)) {
                 const schedule = target.schedule;
-                description.append(element("p", "ar-last", `生效排期：${schedule.mode === "fixed" ? "固定" : "随机"} ${schedule.mode === "fixed" ? schedule.times.length : schedule.count} 次/天 · 自动最小间隔 ${schedule.min_interval_minutes ?? 1} 分钟`));
-                const details = element("details", "ar-run-details");
-                details.append(element("summary", "", "运行详情"),
+                const gap = schedule.min_interval_minutes ?? 1;
+                const interval = gap % 1440 === 0 ? `${gap / 1440} 天` : gap % 60 === 0 ? `${gap / 60} 小时` : `${gap} 分钟`;
+                const mode = schedule.mode === "fixed" ? "固定" : "随机";
+                const count = schedule.mode === "fixed" ? schedule.times.length : schedule.count;
+                details.append(element("p", "ar-last", `生效排期：${mode}${gap > 1440 ? `时段 ${count} 个` : ` ${count} 次/天`} · 自动最小间隔 ${interval}`),
                     element("p", "", `来源：${target.schedule_source === "database" ? "数据库设置" : "变量配置"} · 版本 ${target.schedule_revision}`),
                     element("p", "", target.automatic_state === "known" ? `上次自动尝试 ${dateText(target.automatic_last_at)}` : "自动基线未建立"));
                 if (target.automatic_state === "known") details.append(element("p", "", `下次允许自动尝试 ${target.automatic_next_allowed_at ? dateText(target.automatic_next_allowed_at) : "待确认"}`));
-                description.append(details);
             }
             for (const [label, date, items] of [["当前执行计划", target.schedule_date, target.slots],
                 ["上一计划结果", target.schedule_last?.date, target.schedule_last && target.schedule_last.result !== "PLANNED" ? [target.schedule_last] : undefined]]) {
@@ -657,8 +854,9 @@ export function adminClient() {
                     row.append(timeCell, element("td", "", status)); body.append(row);
                 }
                 if (!items.length) { const row = element("tr"), cell = element("td", "ar-check-note", "暂无执行计划"); cell.colSpan = 2; row.append(cell); body.append(row); }
-                table.append(body); description.append(table);
+                table.append(body); details.append(table);
             }
+            if (details.children.length > 1) description.append(details);
             const actions = element("div", "ar-target-actions");
             const label = element("label", "ar-switch-label", "允许运行");
             const toggle = element("input", "ar-switch-input");
@@ -669,17 +867,20 @@ export function adminClient() {
             toggle.setAttribute("aria-label", target.repository + " 允许运行");
             toggle.addEventListener("change", () => mutate("enabled", target, { enabled: toggle.checked }));
             label.append(toggle);
-            actions.append(label, button(uncertain.has(target.id) ? "重试原请求" : "手动运行", "run",
+            if (editable(target)) actions.append(button("设置", "settings", () => openEditor(target), blocked, "quiet"));
+            actions.append(label, button(uncertain.has(target.id) ? "重试原请求" : "运行", "run",
                 () => confirm("run", target), blocked || !runnable, "primary"));
-            main.append(description, actions);
+            main.append(description, next, state, actions);
             article.append(main);
-            if (editable(target)) article.append(scheduleEditor(target));
+            if (drafts.get(target.id)?.message) article.append(element("p", "ar-card-feedback", drafts.get(target.id).message));
             return article;
         });
-        if (!targets.length) cards.push(element("p", "ar-empty", loadError ? "目标读取失败：" + loadError : "暂无配置目标。请在 Cloudflare 添加目标并发布。"));
+        if (!targets.length) cards.push(element("p", "ar-empty", loadError ? "目标读取失败：" + loadError : "暂无目标，点击“新增目标”设置仓库与排期。"));
         list.replaceChildren(...cards);
         root.querySelector("[data-target-count]").textContent = `${targets.length} 个目标 · ${targets.filter((target) => target.enabled && !target.error).length} 个开启`;
         refreshButton.disabled = busy;
+        addButton.disabled = busy || !verified || !catalog || Boolean(loadError) || catalog.items.length >= 100;
+        renderEditor();
         renderLogs();
     }
     function renderLogs() {
@@ -749,11 +950,15 @@ export function adminClient() {
                 verified = true;
                 root.hidden = false;
                 publicView.hidden = true;
-                if (health.config.state !== "valid") { showView("config"); throw new Error("CONFIG_INVALID"); }
+                if (!["valid", "missing"].includes(health.config.state)) { showView("config"); throw new Error("CONFIG_INVALID"); }
             } else { overview.textContent = "配置状态暂不可用"; throw new Error("RESPONSE_INVALID"); }
-            const data = await request("/api/admin/targets");
+            await readManagedTargets();
             if (current !== session) return;
-            acceptTargets(data);
+            if (health.config.source === "variable") {
+                const updatedHealth = await request("/health");
+                if (updatedHealth?.config?.state !== "valid" || updatedHealth.config.source !== "database") throw new Error("RESPONSE_INVALID");
+                renderConfiguration(updatedHealth);
+            }
             verified = true;
             root.hidden = false;
             publicView.hidden = true;
@@ -762,6 +967,7 @@ export function adminClient() {
         } catch (error) {
             if (current === session && error.message !== "SESSION_ENDED") {
                 targets = [];
+                catalog = null; closeEditor();
                 loadError = errors[error.message] ?? errors.RESPONSE_INVALID;
                 if (!healthRead) {
                     overview.textContent = "配置状态暂不可用，无法确认。";
@@ -809,6 +1015,7 @@ export function adminClient() {
                 if (data?.status !== "ENABLED_UPDATED" || !validTarget(data.target) || data.target.id !== target.id)
                     throw new Error("RESPONSE_INVALID");
                 acceptTargets({ status: "OK", targets: targets.map(item => item.id === target.id ? data.target : item) });
+                if (catalog?.items.some(item => item.id === target.id)) acceptCatalog(await request("/api/admin/catalog"));
                 message = `${target.repository} 已${data.target.enabled ? "开启" : "关闭"}，数据库开关已保存。`;
             } else if (action === "run") {
                 if (!knownResult(data?.status) || typeof data.cached !== "boolean" || !validRecord(data.record)
@@ -844,6 +1051,11 @@ export function adminClient() {
     }
     logoutButton.addEventListener("click", () => logout());
     refreshButton.addEventListener("click", () => refresh());
+    addButton.addEventListener("click", () => {
+        if (addButton.disabled) return;
+        openEditor({ id: "__new", enabled: true, schedule: { mode: "random", count: 1, window: { start: "01:00", end: "23:00" } } }, addButton);
+    });
+    editor.addEventListener("cancel", event => { event.preventDefault(); closeEditor(true); });
     document.querySelector("[data-access-form]").addEventListener("submit", (event) => {
         event.preventDefault();
         if (busy) return;

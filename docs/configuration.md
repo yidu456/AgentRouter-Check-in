@@ -2,7 +2,7 @@
 
 账号、系统、账号自己的代理和固定浏览器配置，都放在一个 GitHub Actions Secret：`CHECKIN_CONFIG`。在 **Settings → Secrets and variables → Actions → New repository secret** 创建；值是完整 JSON，不加外层引号、代码围栏或注释，不放公开 Variables 或仓库文件。
 
-本手册只说明签到账号；Cloudflare 每日固定/随机 1～24 次使用另一份 Worker 变量 `TRIGGER_CONFIG` 作为初值，也可在管理页保存数据库排期/自动最小间隔，不能混入 `CHECKIN_CONFIG`。填写示例、持久登录与部署步骤见 [Cloudflare 指南](../cloudflare/README.md)。
+本手册只说明签到账号；Cloudflare 目标和排期在管理页弹窗新增/编辑，保存到 `SCHEDULES` 数据库，不需要另写仓库 JSON。Worker `TRIGGER_CONFIG` 仅供首次导入旧目标，目录建立后修改它不生效，不能混入 `CHECKIN_CONFIG`。自动最小间隔可选分钟/小时/天，范围 1 分钟～365 天，超过一天只能安排每天一个时段；这是尝试间隔，不保证每隔 N 天恰好运行。凭据引用、持久登录与部署步骤见 [Cloudflare 指南](../cloudflare/README.md)。
 
 **推荐 `version: 2`：系统在外层，每个系统下有多个账号。** 下列邮箱、密码、节点、UUID 和机器人凭据都是虚构数据；字段合法不代表能连接、登录或发送消息。解析器以 `routing.py`、节点支持范围以 `proxy_runtime.py` 为准，不是任意客户端/Xray 配置导入器。
 

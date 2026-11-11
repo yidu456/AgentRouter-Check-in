@@ -21,8 +21,8 @@
 1. Cloudflare **Workers & Pages → 你的 Worker → Settings → Variables & Secrets → Add**。
 2. 类型选 **Secret**，名称 `GITHUB_TOKEN_A`，粘贴 PAT 原值；不要加引号、换行或 `Bearer ` 前缀。
 3. 其他 owner 的 PAT 保存为 `GITHUB_TOKEN_B` 等。
-4. 添加 **Text** `TRIGGER_CONFIG`，将目标 `token_secret` 填为对应名称，完整示例见 [部署指南](README.md#3-配置仓库目标)。
-5. 保存并部署。初次核对可显式 `enabled:false`，确认后从管理页开启。
+4. 保存并部署，然后登录管理页 → **新增目标**，填写仓库、分支和工作流，从凭据列表选择对应 Secret 名称，设置排期并保存。步骤见 [部署指南](README.md#3-配置仓库目标)。
+5. 初次核对可先关闭“允许运行”，确认后开启。旧部署的 **Text** `TRIGGER_CONFIG` 仅用于首次导入，可选；已有数据库目录后不再修改它。
 
 这是 **运行时** 设置，不是 Build variables，也不是 GitHub Actions Secrets；这些位置不会自动互通。`GITHUB_TOKEN_A` 也不是 Actions 自动生成的临时 `GITHUB_TOKEN`。
 

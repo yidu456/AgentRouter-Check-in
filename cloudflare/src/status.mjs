@@ -1,10 +1,13 @@
-import { inspectConfig, parseConfig, tokenFor } from "./config.mjs";
+import { inspectConfig, parseConfig, tokenFor, scheduleFor } from "./config.mjs";
 import { wecomState } from "./wecom.mjs";
 import { adminState, adminGate, loginState } from "./admin.mjs";
 import { adminShell } from "./admin-ui.mjs";
+import { readCatalog } from "./target-catalog.mjs";
 
-export function configurationStatus(env = {}) {
-    const config = inspectConfig(env.TRIGGER_CONFIG, env);
+export function configurationStatus(env = {}, catalog = null) {
+    const config = catalog ? { state: "valid", error: null, source: "database",
+        items: catalog.items.map(({ name, catalog_revision, control_revision, ...target }, index) => ({
+            index, error: null, ...target, schedule: scheduleFor(target) })) } : inspectConfig(env.TRIGGER_CONFIG, env);
     config.items = config.items.map(item => ({ ...item, token_state: item.token_secret === null ? null
         : tokenFor(item, env) ? "configured" : env[item.token_secret] === undefined ? "missing" : "invalid" }));
     const status = {
@@ -17,7 +20,7 @@ export function configurationStatus(env = {}) {
         schedule: { state: "not_configured", window: "01:00–23:00", initialize_at: "00:05", plan_read: false },
     };
     let targets;
-    try { targets = parseConfig(env.TRIGGER_CONFIG); }
+    try { targets = catalog ? catalog.items : parseConfig(env.TRIGGER_CONFIG); }
     catch (error) {
         status.config.state = "invalid";
         status.config.error = error.diagnostic ?? { field: "config", code: "CONFIG_FIELDS" };
@@ -68,7 +71,19 @@ export async function statusResponse(request, env) {
         return new Response(null, { status: 405, headers: { ...headers, Allow: "GET, HEAD" } });
     if (entry) headers["Content-Security-Policy"] += "; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'";
     headers["Content-Type"] = path === "/" ? "text/plain; charset=utf-8" : path === "/health" ? "application/json; charset=utf-8" : "text/html; charset=utf-8";
+    let health;
+    if (path === "/health" && request.method !== "HEAD") {
+        try {
+            const catalog = await readCatalog(env);
+            if (catalog) {
+                health = configurationStatus(env, catalog);
+            } else {
+                health = configurationStatus(env);
+                health.config.source = "variable";
+            }
+        } catch { return new Response(JSON.stringify({ status: "STATE_INVALID" }), { status: 503, headers }); }
+    }
     const body = request.method === "HEAD" ? null : path === "/" ? "hello world"
-        : path === "/health" ? JSON.stringify(configurationStatus(env)) : tokenPage(env);
+        : path === "/health" ? JSON.stringify(health) : tokenPage(env);
     return new Response(body, { headers });
 }

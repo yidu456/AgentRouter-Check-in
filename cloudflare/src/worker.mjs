@@ -1,10 +1,11 @@
-import { parseConfig, targetBinding, tokenFor, intervalMinutes, scheduleFor } from "./config.mjs";
+import { targetBinding, tokenFor, intervalMinutes, scheduleFor } from "./config.mjs";
 import { statusResponse } from "./status.mjs";
 import { sendTriggerNotification } from "./wecom.mjs";
 import { adminResponse, adminGate, adminJson, mutationBody, targetState, UUID, basicAuthorized, adminState, loginState } from "./admin.mjs";
 import { sessionStorageResponse } from "./sessions.mjs";
 import { DAY, localDate, validPlan, planBinding, samePlanTarget, pendingSlot, migratePlan, createPlan } from "./scheduling.mjs";
 import { settingsBinding, validSettings, validGuard, effectiveTarget, settingsState } from "./schedule-settings.mjs";
+import { resolveTargets, storedCatalog, bootstrapCatalog, publicCatalog, saveCatalog, enableCatalogTarget } from "./target-catalog.mjs";
 export { parseConfig } from "./config.mjs";
 export { randomMinute } from "./scheduling.mjs";
 
@@ -53,6 +54,30 @@ export class TriggerSchedule {
 
     async fetch(request) {
         const url = new URL(request.url);
+        if (url.pathname === "/catalog/read" && request.method === "GET") {
+            try { return adminJson(await storedCatalog(this.ctx.storage)); }
+            catch { return adminJson({ status: "STATE_INVALID" }, 503); }
+        }
+        if (["/catalog/bootstrap", "/catalog/save", "/catalog/enabled"].includes(url.pathname)) {
+            const denied = await adminGate(request, this.env);
+            if (denied) return denied;
+            const reading = url.pathname === "/catalog/bootstrap" && request.method === "GET";
+            if (!reading && !(["/catalog/save", "/catalog/enabled"].includes(url.pathname) && request.method === "POST")) return adminJson({ status: "NOT_FOUND" }, 404);
+            const body = reading ? null : await mutationBody(request, url.pathname === "/catalog/enabled" ? "enabled" : "catalog");
+            if (body instanceof Response) return body;
+            return this.ctx.blockConcurrencyWhile(async () => {
+                try { return adminJson(reading ? publicCatalog(await bootstrapCatalog(this.ctx.storage, this.env), this.env)
+                    : url.pathname === "/catalog/enabled" ? await enableCatalogTarget(this.ctx.storage, this.env, url.searchParams.get("id"), body.enabled)
+                        : await saveCatalog(this.ctx.storage, this.env, body)); }
+                catch (error) {
+                    const codes = { CONFIG_INVALID: 503, STATE_INVALID: 503, TARGET_INVALID: 400, CREDENTIAL_INVALID: 400,
+                        CATALOG_CONFLICT: 409, CATALOG_NOT_INITIALIZED: 409, TARGET_NOT_FOUND: 404,
+                        CATALOG_REVISION_LIMIT: 429, CATALOG_FULL: 429 };
+                    const code = Object.hasOwn(codes, error?.message ?? "") ? error.message : "STORAGE_UNAVAILABLE";
+                    return adminJson({ status: code, ...(error?.diagnostic ? { error: error.diagnostic } : {}) }, codes[code] ?? 503);
+                }
+            });
+        }
         if (url.pathname.startsWith("/session/")) {
             if (adminState(this.env) !== "configured") return adminJson({ status: "NOT_FOUND" }, 404);
             if (loginState(this.env) !== "configured") return adminJson({ status: "AUTH_NOT_CONFIGURED" }, 503);
@@ -70,9 +95,11 @@ export class TriggerSchedule {
             if (body instanceof Response) return body;
             return this.ctx.blockConcurrencyWhile(async () => {
                 let target;
-                try { target = parseConfig(this.env.TRIGGER_CONFIG).find((item) => item.id === url.searchParams.get("id")); }
+                try { target = (await resolveTargets(this.env)).find((item) => item.id === url.searchParams.get("id")); }
                 catch { return adminJson({ status: "CONFIG_INVALID" }, 503); }
                 if (!target) return adminJson({ status: "TARGET_NOT_FOUND" }, 404);
+                if (target.catalog_revision !== undefined && ["enabled", "schedule", "schedule/reset"].includes(action))
+                    return adminJson({ status: "CATALOG_MANAGED" }, 409);
                 try {
                     // Settings requests defer legacy guard persistence until the revision-bound commit.
                     let state = await this.snapshot(target, !["schedule", "schedule/reset"].includes(action));
@@ -81,8 +108,8 @@ export class TriggerSchedule {
                         const active = this.enabled(effective, state.control) && tokenFor(effective, this.env);
                         if (!active) {
                             if (await this.ctx.storage.getAlarm() !== null) await this.ctx.storage.deleteAlarm();
-                        } else if (!state.plan || state.plan.version === 1 || state.plan.binding !== planBinding(effective)) {
-                            await this.initialize(target);
+                        } else if (state.catalogAdopted || !state.plan || state.plan.version === 1 || state.plan.binding !== planBinding(effective)) {
+                            await this.initialize(target, state.catalogAdopted);
                             state = await this.snapshot(target);
                         } else if (state.plan.id === target.id && state.plan.binding === planBinding(effective)) {
                             const slot = pendingSlot(state.plan, Date.now());
@@ -108,11 +135,14 @@ export class TriggerSchedule {
     }
 
     async snapshot(target, persistGuard = true) {
-        const [control, history, receipts, plan, settings, savedGuard] = await Promise.all(["control", "history", "receipts", "plan", "schedule_settings", "automatic_guard"]
+        let [control, history, receipts, plan, settings, savedGuard, seen] = await Promise.all(["control", "history", "receipts", "plan", "schedule_settings", "automatic_guard", "catalog_seen"]
             .map((key) => this.ctx.storage.get(key)));
         if (control !== undefined && !validControl(control) || history !== undefined && !validHistory(history)
                 || receipts !== undefined && !validReceipts(receipts) || plan !== undefined && !validPlan(plan)
-                || settings !== undefined && !validSettings(settings) || savedGuard !== undefined && !validGuard(savedGuard)) {
+                || settings !== undefined && !validSettings(settings) || savedGuard !== undefined && !validGuard(savedGuard)
+                || seen !== undefined && (!exactKeys(seen, ["version", "revision", "control_revision", "binding"]) || seen.version !== 1
+                    || !Number.isSafeInteger(seen.revision) || seen.revision < 0 || !Number.isSafeInteger(seen.control_revision)
+                    || seen.control_revision < 0 || typeof seen.binding !== "string" || seen.binding.length > 1024)) {
             await this.ctx.storage.deleteAlarm();
             throw new Error("STATE_INVALID");
         }
@@ -122,14 +152,49 @@ export class TriggerSchedule {
             const linked = history?.items.filter(record => record.source === "automatic"
                 && slots.some(slot => slot.attempted && slot.history_id === record.id
                     && /^DISPATCH_/.test(slot.result)));
-            if (linked?.length) {
+            if (linked?.length)
                 guard = { version: 1, binding: settingsBinding(target), last_at: Math.max(...linked.map(record => record.at)) };
-                if (persistGuard) await this.ctx.storage.put("automatic_guard", guard);
-            }
         }
+        let catalogAdopted = false;
+        if (target?.catalog_revision !== undefined && (seen?.revision !== target.catalog_revision
+            || seen?.control_revision !== target.control_revision || seen.binding !== settingsBinding(target))) {
+            // Import is transparent; later edits atomically adopt the saved full target without erasing receipts/history.
+            const edit = target.catalog_revision > 0 && (seen?.revision !== target.catalog_revision || seen?.binding !== settingsBinding(target));
+            const enabledEdit = target.control_revision > 0 && seen?.control_revision !== target.control_revision;
+            catalogAdopted = edit || enabledEdit;
+            const batch = { catalog_seen: { version: 1, revision: target.catalog_revision, control_revision: target.control_revision,
+                binding: settingsBinding(target) } };
+            if (catalogAdopted)
+                control = batch.control = { version: 1, binding: targetBinding(target), enabled: target.enabled };
+            if (edit) {
+                const matched = settings?.binding === settingsBinding(target);
+                if (matched && settings.revision === Number.MAX_SAFE_INTEGER) throw new Error("STATE_INVALID");
+                settings = batch.schedule_settings = { version: 1, binding: settingsBinding(target),
+                    revision: matched ? settings.revision + 1 : 1, schedule: null };
+            }
+            if (catalogAdopted) {
+                const effective = effectiveTarget(target, settings), now = Date.now();
+                if (plan?.version === 1) plan = migratePlan(plan, effective);
+                if (plan?.binding === planBinding(effective)) {
+                    for (const slot of plan.slots.filter(slot => !slot.attempted && slot.at <= now)) {
+                        slot.attempted = true; slot.result = "MISSED_DATE";
+                    }
+                } else if (plan) {
+                    for (const slot of plan.slots.filter(slot => !slot.attempted)) {
+                        slot.attempted = true; slot.result = "TARGET_CHANGED";
+                    }
+                }
+                if (!plan || plan.binding !== planBinding(effective) || !pendingSlot(plan, now))
+                    plan = createPlan(effective, plan, now, false, this.earliest(effective, { guard }, now));
+                // The no-catch-up plan and adoption marker commit together, including cron/Alarm-first reads.
+                batch.plan = plan;
+            }
+            if (guard !== savedGuard) batch.automatic_guard = guard;
+            await this.ctx.storage.put(batch);
+        } else if (guard !== savedGuard && persistGuard) await this.ctx.storage.put("automatic_guard", guard);
         return { control, history: history ?? { version: 1, items: [] },
             receipts: receipts ?? { version: 1, items: [], last_at: 0 }, plan, settings, guard,
-            guardRecovered: guard !== savedGuard };
+            guardRecovered: guard !== savedGuard, catalogAdopted };
     }
 
     enabled(target, control) {
@@ -197,7 +262,7 @@ export class TriggerSchedule {
             let plan = state.plan;
             if (plan?.version === 1) plan = migratePlan(plan, effective);
             if (!plan || plan.id !== effective.id || plan.binding !== planBinding(effective) || !pendingSlot(plan, now))
-                plan = createPlan(effective, plan, now);
+                plan = createPlan(effective, plan, now, false, this.earliest(effective, state, now));
             // Commit override and its plan together; Alarm repair must reuse these exact times.
             await this.ctx.storage.put({ schedule_settings: settings, plan,
                 ...(state.guardRecovered ? { automatic_guard: state.guard } : {}) });
@@ -285,7 +350,7 @@ export class TriggerSchedule {
         let target;
         let reason;
         try {
-            target = parseConfig(this.env.TRIGGER_CONFIG).find((item) => item.id === id);
+            target = (await resolveTargets(this.env)).find((item) => item.id === id);
         } catch { reason = "CONFIG_INVALID"; }
         if (target) {
             const state = await this.snapshot(target);
@@ -320,10 +385,17 @@ export class TriggerSchedule {
     }
 
     async planNext(target, previous, now, afterPrevious = false, arm = true) {
-        const plan = createPlan(target, previous, now, afterPrevious);
+        const state = await this.snapshot(target);
+        const plan = createPlan(target, previous, now, afterPrevious, this.earliest(target, state, now));
         await this.ctx.storage.put("plan", plan);
         if (arm) await this.ctx.storage.setAlarm(pendingSlot(plan).at);
         console.log(`TRIGGER ${target.id} ${plan.date} PLANNED ${new Date(pendingSlot(plan).at).toISOString()}`);
+    }
+
+    earliest(target, state, now) {
+        const gap = intervalMinutes(scheduleFor(target));
+        return gap > 1440 && state.guard?.binding === settingsBinding(target)
+            ? Math.max(now, state.guard.last_at + gap * 60_000) : now;
     }
 
     async alarm() {
@@ -332,6 +404,7 @@ export class TriggerSchedule {
             if (!plan) return;
             const selected = await this.select(plan.id);
             if (!selected) return;
+            plan = await this.readPlan();
             const { target, token } = selected;
             if (plan.version === 1) {
                 plan = migratePlan(plan, target);
@@ -381,7 +454,7 @@ export default {
     async fetch(request, env) { return await adminResponse(request, env) ?? statusResponse(request, env); },
     async scheduled(_event, env) {
         let targets;
-        try { targets = parseConfig(env.TRIGGER_CONFIG); }
+        try { targets = await resolveTargets(env); }
         catch { logResult("config", "-", "CONFIG_INVALID"); return; }
         for (const target of targets) {
             try {

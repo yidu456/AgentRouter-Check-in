@@ -208,7 +208,7 @@ test("database enable overrides JSON false and cron visits configured disabled t
     await worker.scheduled({}, f.env);
     assert.equal(f.alarm(), plan.slots[0].at);
     assert.deepEqual(f.values.get("plan"), plan);
-    assert.deepEqual(f.namespaceCalls.slice(-1), ["v1:github_a"]);
+    assert.deepEqual(f.namespaceCalls.filter(name => name.startsWith("v1:")).slice(-1), ["v1:github_a"]);
 });
 
 test("reopen retains only a future unattempted matching plan and skips elapsed same-date plan", async (t) => {

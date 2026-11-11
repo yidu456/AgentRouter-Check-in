@@ -70,16 +70,21 @@ export function migratePlan(plan, target) {
     return migrated;
 }
 
-export function createPlan(target, previous, now, afterPrevious = false) {
-    const schedule = scheduleFor(target), today = localDate(now);
+export function createPlan(target, previous, now, afterPrevious = false, earliest = now) {
+    const schedule = scheduleFor(target), planningNow = Math.max(now, earliest - 1), today = localDate(planningNow);
+    const clipWindow = earliest > now && schedule.mode === "random" && schedule.count === 1 && intervalMinutes(schedule) > 1440;
     let date;
-    if (schedule.mode === "fixed") date = schedule.times.some(t => dayStart(today) + timeMinute(t) * MINUTE > now) ? today : nextDate(today);
-    else date = now < dayStart(today) + timeMinute(schedule.window.start) * MINUTE ? today : nextDate(today);
+    if (schedule.mode === "fixed") date = schedule.times.some(t => dayStart(today) + timeMinute(t) * MINUTE > planningNow) ? today : nextDate(today);
+    else date = planningNow < dayStart(today) + timeMinute(clipWindow ? schedule.window.end : schedule.window.start) * MINUTE ? today : nextDate(today);
     if (afterPrevious && previous && date <= previous.date) date = nextDate(previous.date);
     let minutes;
     if (schedule.mode === "fixed") minutes = schedule.times.map(timeMinute);
     else {
-        const start = timeMinute(schedule.window.start), end = timeMinute(schedule.window.end);
+        // A known future interval horizon can use the remaining one-slot window, never earlier minutes.
+        const start = clipWindow && date === localDate(earliest)
+            ? Math.max(timeMinute(schedule.window.start), Math.ceil((earliest - dayStart(date)) / MINUTE))
+            : timeMinute(schedule.window.start);
+        const end = timeMinute(schedule.window.end);
         const gap = intervalMinutes(schedule), size = end - start + 1 - (schedule.count - 1) * (gap - 1);
         // Sample compressed offsets, then restore the required gaps without retrying plans.
         const pool = Array.from({ length: size }, (_, i) => i);

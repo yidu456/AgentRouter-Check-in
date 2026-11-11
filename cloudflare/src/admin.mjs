@@ -1,6 +1,7 @@
-import { parseConfig, tokenFor, scheduleFor, normalizeSchedule } from "./config.mjs";
+import { tokenFor, scheduleFor, normalizeSchedule } from "./config.mjs";
 import { adminClient } from "./admin-ui.mjs";
 import { sessionApiResponse, sessionAuthorized } from "./sessions.mjs";
+import { catalogStub, resolveTargets, normalizeCatalogTarget } from "./target-catalog.mjs";
 
 const ACCESS = /^[A-Za-z0-9_-]{32,128}$/;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -91,6 +92,15 @@ export async function mutationBody(request, action) {
         body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size)));
     } catch { return adminJson({ status: "BODY_INVALID" }, 400); }
     finally { reader.releaseLock(); }
+    if (action === "catalog") {
+        if (!body || typeof body !== "object" || Array.isArray(body)
+            || Object.keys(body).length !== 2 || !Object.hasOwn(body, "revision") || !Object.hasOwn(body, "target")
+            || !Number.isSafeInteger(body.revision) || body.revision < 0)
+            return adminJson({ status: "BODY_INVALID" }, 400);
+        try { normalizeCatalogTarget(body.target, body.target?.id ?? "new"); }
+        catch (error) { return adminJson({ status: "TARGET_INVALID", error: error.diagnostic }, 400); }
+        return body;
+    }
     if (action === "schedule" || action === "schedule/reset") {
         const keys = action === "schedule" ? ["binding", "revision", "schedule"] : ["binding", "revision"];
         if (!body || typeof body !== "object" || Array.isArray(body)
@@ -116,6 +126,8 @@ export async function mutationBody(request, action) {
 
 export function targetState(target, env) {
     return { id: target.id, repository: target.repository, workflow: target.workflow, ref: target.ref,
+        ...(target.catalog_revision === undefined ? {} : { name: target.name, token_secret: target.token_secret,
+            catalog_revision: target.catalog_revision }),
         enabled: target.enabled, token_state: tokenFor(target, env) ? "configured"
             : env[target.token_secret] === undefined || env[target.token_secret] === "" ? "missing" : "invalid",
         next_run: null, history: [], error: null, schedule: scheduleFor(target), schedule_date: null, slots: [],
@@ -143,6 +155,19 @@ export async function adminResponse(request, env) {
     }
     const denied = await adminGate(request, env);
     if (denied) return denied;
+    if (url.pathname === "/api/admin/catalog" && ["GET", "POST"].includes(request.method)) {
+        if (request.method === "POST") {
+            const body = await mutationBody(request, "catalog");
+            if (body instanceof Response) return body;
+            // Forward the original bounded body with Cookie/CSRF/Origin for DO-side authorization.
+            const headers = new Headers(request.headers);
+            try { return await catalogStub(env).fetch(new Request(new URL("/catalog/save", url), {
+                method: "POST", headers, body: JSON.stringify(body) })); }
+            catch { return adminJson({ status: "STORAGE_UNAVAILABLE" }, 503); }
+        }
+        try { return await catalogStub(env).fetch(new Request(new URL("/catalog/bootstrap", url), { headers: request.headers })); }
+        catch { return adminJson({ status: "STORAGE_UNAVAILABLE" }, 503); }
+    }
     const listing = request.method === "GET" && url.pathname === "/api/admin/targets";
     const match = /^\/api\/admin\/targets\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/(enabled|run|logs\/delete|logs\/clear|schedule(?:\/reset)?)$/.exec(url.pathname);
     if (!listing && (request.method !== "POST" || !match)) return adminJson({ status: "NOT_FOUND" }, 404);
@@ -152,8 +177,9 @@ export async function adminResponse(request, env) {
         if (body instanceof Response) return body;
     }
     let targets;
-    try { targets = parseConfig(env.TRIGGER_CONFIG); }
-    catch { return adminJson({ status: "CONFIG_INVALID" }, 503); }
+    try { targets = await resolveTargets(env); }
+    catch (error) { return adminJson({ status: ["STATE_INVALID", "STORAGE_UNAVAILABLE"].includes(error?.message)
+        ? error.message : "CONFIG_INVALID" }, 503); }
     const target = listing ? null : targets.find((item) => item.id === match[1]);
     if (!listing && !target) return adminJson({ status: "TARGET_NOT_FOUND" }, 404);
     const objectRequest = async (item, action, payload) => {
@@ -185,6 +211,13 @@ export async function adminResponse(request, env) {
         return adminJson({ status: "OK", targets: states });
     }
     try {
+        if (match[2] === "enabled" && target.catalog_revision !== undefined) {
+            const response = await catalogStub(env).fetch(new Request(new URL(`/catalog/enabled?id=${target.id}`, url), {
+                method: "POST", headers: request.headers, body: JSON.stringify(body) }));
+            if (!response.ok) return response;
+            const state = await objectRequest(target, "state");
+            return adminJson({ status: "ENABLED_UPDATED", target: await state.json() }, state.status);
+        }
         const response = await objectRequest(target, match[2], body);
         return adminJson(await response.json(), response.status);
     } catch { return adminJson({ status: "STORAGE_UNAVAILABLE" }, 503); }

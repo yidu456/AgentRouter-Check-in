@@ -33,7 +33,7 @@ test("static administration client is configured-only and never authenticates or
 const sessionData = () => ({ status: "AUTHENTICATED", expires_at: new Date(Date.now() + 43_200_000).toISOString(),
     csrf_token: "dummy_csrf_" + "x".repeat(32) });
 
-function bootstrap(autoLogin, handler, customHealth = false, hash = "", sessionHandler) {
+function bootstrap(autoLogin, handler, customHealth = false, hash = "", sessionHandler, catalogHandler) {
     const nodes = new Map();
     const node = (selector) => {
         if (!nodes.has(selector)) nodes.set(selector, { hidden: selector === "#trigger-admin", textContent: "",
@@ -41,7 +41,7 @@ function bootstrap(autoLogin, handler, customHealth = false, hash = "", sessionH
             addEventListener(name, fn) { this.listeners[name] = fn; },
             replaceChildren(...children) { this.children = children; },
             append(...children) { this.children.push(...children); },
-            setAttribute(name, value) { this.attributes[name] = value; }, focus() {}, close() {}, showModal() {}, querySelector: node, querySelectorAll() { return []; } });
+            setAttribute(name, value) { this.attributes[name] = value; }, focus() {}, close() { this.open = false; }, showModal() { this.open = true; }, querySelector: node, querySelectorAll() { return []; } });
         return nodes.get(selector);
     };
     const calls = [];
@@ -68,6 +68,10 @@ function bootstrap(autoLogin, handler, customHealth = false, hash = "", sessionH
                     : url.endsWith("/logout") ? Response.json({ status: "SIGNED_OUT" }) : Response.json(sessionData());
             }
             if (url === "/health" && !customHealth) return Response.json({config:{state:"valid"},github_tokens:{configured:1,missing:0,invalid:0},wecom:{state:"missing"},storage_binding:{configured:true}});
+            if (url === "/api/admin/catalog") {
+                calls.push({ url, options });
+                return catalogHandler ? catalogHandler(url, options) : Response.json({ status: "OK", version: 1, revision: 0, items: [], credentials: [] });
+            }
             calls.push({ url, options }); return handler(url, options);
         },
     });
@@ -259,7 +263,7 @@ test("manual retry preserves UUID after possibly-dispatched 503 responses and in
             await confirmRun(page);
             assert.equal(ids.length, 2);
             assert.equal(ids[1], ids[0], "A retry must not create a new dispatch UUID");
-            assert.equal(runButton(page).textContent, "手动运行");
+            assert.equal(runButton(page).textContent, "运行");
         });
     }
 });
@@ -274,7 +278,7 @@ test("explicit pre-dispatch rejection discards UUID and permits a later new manu
     });
     await page.settle();
     await confirmRun(page);
-    assert.equal(runButton(page).textContent, "手动运行");
+    assert.equal(runButton(page).textContent, "运行");
     await confirmRun(page);
     assert.equal(ids.length, 2);
     assert.notEqual(ids[1], ids[0]);
@@ -640,7 +644,14 @@ const editableTarget = { ...uiTarget, schedule: { mode: "random", count: 2, wind
     automatic_state: "known", automatic_last_at: "2026-11-10T01:00:00.000Z", automatic_next_allowed_at: "2026-11-10T02:00:00.000Z" };
 function findEditor(page, key, value) {
     const visit = item => item.dataset?.[key] === value ? item : item.children?.map(visit).find(Boolean);
-    return page.node("[data-targets]").children.map(visit).find(Boolean);
+    const listResult = page.node("[data-targets]").children.map(visit).find(Boolean);
+    if (listResult) return listResult;
+    const dialog = page.node("[data-target-editor]");
+    if (!dialog.open) {
+        const settings = page.node("[data-targets]").children.map(item => findNode(item, "action", "settings")).find(Boolean);
+        settings?.listeners.click();
+    }
+    return visit(dialog);
 }
 const field = (page, name) => findEditor(page, "scheduleField", name);
 const editorAction = (page, name) => findEditor(page, "action", "schedule-" + name);
@@ -663,10 +674,10 @@ test("effective schedules expose labeled mode-specific controls and independent 
     for (const name of ["mode", "count", "start", "end", "interval"]) assert.ok(field(page, name), name);
     assert.equal(field(page, "start").type, "time");
     assert.equal(field(page, "interval").min, "1");
-    assert.equal(field(page, "interval").max, "1440");
+    assert.equal(field(page, "interval").max, "525600");
     assert.equal(field(page, "time"), undefined);
     const text = textTree(page.node("[data-targets]"));
-    assert.match(text, /自动最小间隔 60/);
+    assert.match(text, /自动最小间隔 1 小时/);
     assert.match(text, /来源：数据库设置.*上次自动尝试/);
     assert.ok(editorAction(page, "reset"));
     editField(page, "mode", "fixed");
@@ -681,9 +692,9 @@ test("fixed add and delete derive daily count without submitting unrelated mode 
         : Response.json({ status: "SCHEDULE_INVALID", error: { field: "schedule.times", code: "SCHEDULE_TIME" } }, { status: 400 }));
     await page.settle();
     editorAction(page, "add").listeners.click();
-    assert.match(textTree(page.node("[data-targets]")), /2 次\/天/);
+    assert.match(textTree(page.node("[data-target-editor]")), /2 次\/天/);
     editorAction(page, "remove").listeners.click();
-    assert.match(textTree(page.node("[data-targets]")), /1 次\/天/);
+    assert.match(textTree(page.node("[data-target-editor]")), /1 次\/天/);
     editField(page, "time", "08:30");
     submitSchedule(page);
     await page.settle();
@@ -827,7 +838,7 @@ test("failed unknown readback retains draft for later read and does not claim un
 });
 
 test("safe server validation is inline and preserves input without printing raw diagnostics", async (t) => {
-    for (const [error, expected] of [[{ field: "schedule.min_interval_minutes", code: "SCHEDULE_INTERVAL" }, /1.*1440/],
+    for (const [error, expected] of [[{ field: "schedule.min_interval_minutes", code: "SCHEDULE_INTERVAL" }, /1.*525600/],
         [{ field: "schedule.times", code: "SCHEDULE_SPACING" }, /次日|循环/],
         [{ field: "private_field_marker", code: "private_code_marker" }, /排期|不可识别/]]) {
         await t.test(error.code, async () => {
@@ -1045,4 +1056,247 @@ test("toggle response with a newer schedule revision marks existing draft confli
     assert.equal(field(page, "count").value, "3");
     assert.equal(editorAction(page, "save").disabled, true);
     assert.match(textTree(page.node("[data-targets]")), /其他页面/);
+});
+
+const catalogItem = { id: "primary", name: "daily-checkin", repository: "fixture/team", workflow: "Checkin.yml", ref: "main",
+    token_secret: "GITHUB_TOKEN_A", enabled: true, schedule: { mode: "fixed", times: ["08:30"] } };
+const catalogTarget = { ...editableTarget, name: catalogItem.name, token_secret: catalogItem.token_secret, catalog_revision: 1 };
+const runtimeBinding = target => JSON.stringify([target.id, JSON.stringify([target.repository.toLowerCase(), target.workflow, target.ref])]);
+const catalogReply = (items = [catalogItem], revision = 7, credentials = ["GITHUB_TOKEN_A", "GITHUB_TOKEN_B"]) =>
+    Response.json({ status: "OK", version: 1, revision, items, credentials });
+function findNode(tree, key, value) {
+    const visit = item => item.dataset?.[key] === value ? item : item.children?.map(visit).find(Boolean);
+    return visit(tree);
+}
+const popupField = (page, name) => findNode(page.node("[data-target-editor]"), "scheduleField", name);
+const popupAction = (page, name) => findNode(page.node("[data-target-editor]"), "action", name);
+function popupEdit(page, name, value) {
+    const input = popupField(page, name); assert.ok(input, name); input.value = value;
+    input.listeners[input.tagName === "SELECT" ? "change" : "input"]();
+}
+function openTarget(page, id = "primary") {
+    const article = findNode(page.node("[data-targets]"), "targetId", id);
+    const settings = findNode(article, "action", "settings"); assert.ok(settings, "Target settings action exists");
+    settings.listeners.click();
+}
+function popupSubmit(page) {
+    const form = findNode(page.node("[data-target-editor]"), "scheduleForm", "primary")
+        ?? findNode(page.node("[data-target-editor]"), "scheduleForm", "__new");
+    assert.ok(form); form.listeners.submit({ preventDefault() {} });
+}
+function managedPage(targetsHandler = async () => targetReply(catalogTarget), handler = async () => catalogReply()) {
+    return bootstrap(true, targetsHandler, false, "", undefined, handler);
+}
+
+test("compact target settings open only the clicked native popup with effective schedule and visible identity", async () => {
+    const second = { ...catalogTarget, id: "secondary", name: "backup", repository: "fixture/backup", catalog_revision: 2,
+        target_binding: '["secondary","[\\"fixture/backup\\",\\"Checkin.yml\\",\\"main\\"]"]' };
+    const page = managedPage(async () => Response.json({ status: "OK", targets: [catalogTarget, second] }),
+        async () => catalogReply([catalogItem, { ...catalogItem, id: "secondary", name: "backup", repository: "fixture/backup" }]));
+    await page.settle();
+    assert.equal(page.calls.filter(call => call.url === "/api/admin/catalog").length, 1);
+    assert.ok(!findNode(page.node("[data-targets]"), "scheduleForm", "primary"), "List has no in-card editor");
+    assert.match(textTree(page.node("[data-targets]")), /daily-checkin.*fixture\/team.*Checkin.yml.*main/);
+    openTarget(page, "secondary");
+    assert.equal(page.node("[data-target-editor]").open, true);
+    assert.match(textTree(page.node("[data-target-editor]")), /backup.*fixture\/backup/);
+    assert.equal(popupField(page, "repository").value, "fixture/backup");
+    assert.equal(popupField(page, "count").value, "2", "Effective runtime schedule overrides catalog import default");
+    assert.ok(popupAction(page, "tab-basic")); assert.ok(popupAction(page, "tab-schedule"));
+    popupEdit(page, "name", "not-saved"); popupAction(page, "editor-close").listeners.click();
+    assert.equal(page.node("[data-target-editor]").open, false);
+    assert.ok(!page.calls.some(call => call.url === "/api/admin/catalog" && call.options.method === "POST"));
+});
+
+test("catalog popup saves all fields once with global revision Cookie CSRF and canonical day minutes", async () => {
+    let items = [catalogItem], revision = 7, runtime = catalogTarget;
+    const page = managedPage(async () => targetReply(runtime), async (_url, options) => {
+        if (options.method === "GET") return catalogReply(items, revision);
+        const body = JSON.parse(options.body); items = [body.target]; revision = 8;
+        runtime = { ...catalogTarget, ...body.target, catalog_revision: 2, schedule_revision: 5 };
+        runtime.target_binding = runtimeBinding(runtime);
+        return Response.json({ status: "CATALOG_UPDATED", revision, target: body.target });
+    });
+    await page.settle(); openTarget(page);
+    popupEdit(page, "name", "daily-edited"); popupEdit(page, "repository", "fixture/new"); popupEdit(page, "ref", "dev");
+    popupEdit(page, "workflow", "daily.yaml"); popupEdit(page, "token_secret", "GITHUB_TOKEN_B");
+    popupEdit(page, "count", "1"); popupEdit(page, "interval", "2"); popupEdit(page, "interval-unit", "day");
+    popupSubmit(page); popupSubmit(page); await page.settle();
+    const posts = page.calls.filter(call => call.url === "/api/admin/catalog" && call.options.method === "POST");
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].options.headers["X-CSRF-Token"], sessionData().csrf_token);
+    assert.equal(posts[0].options.credentials, "same-origin");
+    assert.deepEqual(JSON.parse(posts[0].options.body), { revision: 7, target: { id: "primary", name: "daily-edited",
+        repository: "fixture/new", ref: "dev", workflow: "daily.yaml", token_secret: "GITHUB_TOKEN_B", enabled: true,
+        schedule: { mode: "random", count: 1, window: { start: "09:00", end: "22:00" }, min_interval_minutes: 2880 } } });
+    assert.match(page.node("[data-feedback]").textContent, /已保存.*未触发运行/);
+    assert.equal(page.node("[data-target-editor]").open, false);
+    assert.equal(page.node("[data-target-editor]").children.length, 0);
+    openTarget(page);
+    assert.equal(popupField(page, "name").value, "daily-edited");
+    assert.equal(popupField(page, "repository").value, "fixture/new");
+    assert.equal(popupField(page, "ref").value, "dev");
+    assert.equal(popupField(page, "workflow").value, "daily.yaml");
+    assert.equal(popupField(page, "token_secret").value, "GITHUB_TOKEN_B");
+    assert.equal(popupField(page, "interval").value, "2");
+    assert.equal(popupField(page, "interval-unit").value, "day");
+    assert.equal(popupAction(page, "schedule-save").disabled, false);
+});
+
+test("add target omits its ID and persists metadata from a new popup", async () => {
+    const page = managedPage(async () => Response.json({ status: "OK", targets: [] }), async (_url, options) =>
+        options.method === "GET" ? catalogReply([], 3) : Response.json({ status: "TARGET_INVALID", error: { field: "target.name", code: "TARGET_FIELD" } }, { status: 400 }));
+    await page.settle(); page.node('[data-action="add-target"]').listeners.click();
+    popupEdit(page, "name", "new target"); popupEdit(page, "repository", "fixture/new");
+    popupSubmit(page); await page.settle();
+    const body = JSON.parse(page.calls.find(call => call.options.method === "POST" && call.url === "/api/admin/catalog").options.body);
+    assert.equal(body.revision, 3); assert.equal(body.target.name, "new target"); assert.equal(body.target.ref, "main");
+    assert.equal(body.target.workflow, "Checkin.yml"); assert.equal(body.target.enabled, true);
+    assert.ok(!Object.hasOwn(body.target, "id")); assert.ok(!Object.hasOwn(body.target, "binding"));
+});
+
+test("catalog conflict and unknown delivery retain blocked draft and never repeat POST", async t => {
+    for (const status of [409, 503]) await t.test(String(status), async () => {
+        const page = managedPage(async () => targetReply(catalogTarget), async (_url, options) => options.method === "GET" ? catalogReply()
+            : Response.json({ status: status === 409 ? "CATALOG_CONFLICT" : "STORAGE_UNAVAILABLE", private: "private_marker" }, { status }));
+        await page.settle(); openTarget(page); popupEdit(page, "name", "my draft"); popupSubmit(page); await page.settle();
+        assert.equal(popupField(page, "name").value, "my draft");
+        assert.equal(popupAction(page, "schedule-save").disabled, true);
+        popupSubmit(page); await page.settle();
+        assert.equal(page.calls.filter(call => call.url === "/api/admin/catalog" && call.options.method === "POST").length, 1);
+        assert.match(page.node("[data-feedback]").textContent, status === 409 ? /其他页面|冲突/ : /未知|未确认/);
+        assert.ok(!textTree(page.node("[data-target-editor]")).includes("private_marker"));
+        if (status === 503) assert.equal(page.calls.filter(call => call.url === "/api/admin/catalog").length, 3);
+    });
+});
+
+test("minute hour day controls reject fractional and greater-than-year intervals before POST", async t => {
+    for (const [amount, unit] of [["1.5", "hour"], ["366", "day"], ["0", "minute"]]) await t.test(amount + unit, async () => {
+        const page = managedPage(); await page.settle(); openTarget(page);
+        popupEdit(page, "interval", amount); popupEdit(page, "interval-unit", unit); popupSubmit(page); await page.settle();
+        assert.ok(!page.calls.some(call => call.url === "/api/admin/catalog" && call.options.method === "POST"));
+        assert.match(textTree(page.node("[data-target-editor]")), /整数|365|间隔/);
+    });
+});
+
+test("unsafe credential catalog and malformed catalog response fail closed without rendering raw secrets", async t => {
+    for (const credentials of [["ADMIN_PASSWORD"], ["private_token_marker"], ["GITHUB_TOKEN_A", "GITHUB_TOKEN_A"]]) await t.test(credentials.join(), async () => {
+        const page = managedPage(undefined, async () => catalogReply([catalogItem], 7, credentials)); await page.settle();
+        assert.equal(page.node("[data-targets]").children.length, 1);
+        assert.ok(!textTree(page.node("[data-targets]")).includes("fixture/team"));
+        assert.equal(page.node('[data-action="add-target"]').disabled, true);
+    });
+});
+
+test("late catalog save after dialog cancellation cannot reattach the closed popup", async () => {
+    let finish, revision = 7;
+    const page = managedPage(async () => targetReply(catalogTarget), async (_url, options) => options.method === "GET" ? catalogReply(undefined, revision)
+        : new Promise(resolve => { finish = resolve; }));
+    await page.settle(); openTarget(page); popupSubmit(page); await page.settle();
+    popupAction(page, "editor-close").listeners.click();
+    revision = 8;
+    finish(Response.json({ status: "CATALOG_UPDATED", revision, target: { ...catalogItem, schedule: catalogTarget.schedule } })); await page.settle();
+    assert.equal(page.node("[data-target-editor]").open, false);
+    assert.equal(page.node("[data-target-editor]").children.length, 0);
+});
+
+test("catalog JSON finishing after logout cannot restore metadata credentials or drafts", async () => {
+    let finish;
+    const page = managedPage(async () => targetReply(catalogTarget), async (_url, options) => options.method === "GET" ? catalogReply()
+        : { ok: true, status: 200, json: () => new Promise(resolve => { finish = resolve; }) });
+    await page.settle(); openTarget(page); popupEdit(page, "name", "discard me"); popupSubmit(page); await page.settle();
+    page.node('[data-action="logout"]').listeners.click(); await page.settle();
+    page.login(); await page.settle();
+    const message = page.node("[data-feedback]").textContent;
+    finish({ status: "CATALOG_UPDATED", revision: 8, target: { ...catalogItem, schedule: catalogTarget.schedule, name: "discard me" } }); await page.settle();
+    assert.equal(page.node("[data-target-editor]").children.length, 0);
+    assert.equal(page.node("[data-feedback]").textContent, message);
+    openTarget(page); assert.equal(popupField(page, "name").value, "daily-checkin");
+});
+
+test("unsafe runtime catalog metadata does not authorize or render target popup edits", async t => {
+    for (const data of [{ name: "private_marker".repeat(100) }, { token_secret: "ADMIN_PASSWORD" }, { catalog_revision: 1.5 }]) await t.test(Object.keys(data)[0], async () => {
+        const page = managedPage(async () => targetReply({ ...catalogTarget, ...data })); await page.settle();
+        assert.ok(!findNode(page.node("[data-targets]"), "action", "settings"));
+        assert.ok(!textTree(page.node("[data-targets]")).includes("private_marker"));
+    });
+});
+
+test("hour input saves canonical minutes while rejecting two slots above one day", async () => {
+    const page = managedPage(undefined, async (_url, options) => options.method === "GET" ? catalogReply()
+        : Response.json({ status: "TARGET_INVALID", error: { field: "target.schedule.count", code: "SCHEDULE_CAPACITY" } }, { status: 400 }));
+    await page.settle(); openTarget(page);
+    popupEdit(page, "interval", "2"); popupEdit(page, "interval-unit", "hour"); popupSubmit(page); await page.settle();
+    assert.equal(JSON.parse(page.calls.find(call => call.url === "/api/admin/catalog" && call.options.method === "POST").options.body).target.schedule.min_interval_minutes, 120);
+    popupEdit(page, "interval", "2"); popupEdit(page, "interval-unit", "day"); popupSubmit(page); await page.settle();
+    assert.equal(page.calls.filter(call => call.url === "/api/admin/catalog" && call.options.method === "POST").length, 1);
+});
+
+test("new targets default enabled and saved day intervals read back in days", async () => {
+    const target = { ...catalogTarget, schedule: { mode: "fixed", times: ["08:30"], min_interval_minutes: 2880 } };
+    const page = managedPage(async () => targetReply(target)); await page.settle(); openTarget(page);
+    assert.equal(popupField(page, "interval").value, "2");
+    assert.equal(popupField(page, "interval-unit").value, "day");
+    popupAction(page, "editor-close").listeners.click();
+    page.node('[data-action="add-target"]').listeners.click();
+    assert.equal(popupField(page, "enabled").checked, true);
+});
+
+test("safe catalog field diagnostics name the invalid field without displaying raw detail", async () => {
+    const page = managedPage(undefined, async (_url, options) => options.method === "GET" ? catalogReply()
+        : Response.json({ status: "TARGET_INVALID", error: { field: "target.ref", code: "TARGET_FIELD", detail: "private_marker" } }, { status: 400 }));
+    await page.settle(); openTarget(page); popupSubmit(page); await page.settle();
+    assert.match(textTree(page.node("[data-target-editor]")), /target\.ref/);
+    assert.ok(!textTree(page.node("[data-target-editor]")).includes("private_marker"));
+});
+
+test("catalog bootstrap after missing variable refreshes configuration checks from the database", async () => {
+    let imported = false;
+    const page = bootstrap(true, async url => url === "/health" ? Response.json({ config: { state: imported ? "valid" : "missing", source: imported ? "database" : "variable", items: [] },
+        github_tokens: { configured: 0, missing: 0, invalid: 0 }, wecom: { state: "missing" }, storage_binding: { configured: true } })
+        : Response.json({ status: "OK", targets: [] }), true, "", undefined,
+        async () => { imported = true; return catalogReply([], 1, []); });
+    await page.settle();
+    assert.equal(page.calls.filter(call => call.url === "/health").length, 2);
+    assert.match(page.node("[data-config-summary]").textContent, /通过/);
+    assert.equal(page.node('[data-action="add-target"]').disabled, false);
+});
+
+test("explicit close and Escape discard unsaved popup edits but refreshing keeps drafts", async () => {
+    const page = managedPage(); await page.settle(); openTarget(page);
+    popupEdit(page, "name", "cancelled-name"); popupAction(page, "editor-close").listeners.click(); openTarget(page);
+    assert.equal(popupField(page, "name").value, "daily-checkin");
+    popupEdit(page, "name", "escape-name"); page.node("[data-target-editor]").listeners.cancel({ preventDefault() {} }); openTarget(page);
+    assert.equal(popupField(page, "name").value, "daily-checkin");
+    popupEdit(page, "name", "keep-draft"); page.node('[data-action="refresh"]').listeners.click(); await page.settle();
+    assert.equal(popupField(page, "name").value, "keep-draft");
+});
+
+test("a persisted target with id new edits itself rather than becoming a create form", async () => {
+    const target = { ...catalogTarget, id: "new", target_binding: '["new","[\\"fixture/team\\",\\"Checkin.yml\\",\\"main\\"]"]' };
+    const item = { ...catalogItem, id: "new" };
+    const page = managedPage(async () => targetReply(target), async (_url, options) => options.method === "GET" ? catalogReply([item])
+        : Response.json({ status: "TARGET_INVALID" }, { status: 400 }));
+    await page.settle(); openTarget(page, "new");
+    assert.equal(popupField(page, "name").value, "daily-checkin");
+    const form = findNode(page.node("[data-target-editor]"), "scheduleForm", "new"); form.listeners.submit({ preventDefault() {} }); await page.settle();
+    const body = JSON.parse(page.calls.find(call => call.url === "/api/admin/catalog" && call.options.method === "POST").options.body);
+    assert.equal(body.target.id, "new"); assert.equal(body.target.repository, "fixture/team");
+});
+
+test("compact rows keep schedule and plan in one collapsed disclosure with readable long-gap units", async t => {
+    for (const [gap, text] of [[2880, /固定时段 1 个.*自动最小间隔 2 天/], [120, /固定 1 次\/天.*自动最小间隔 2 小时/]]) await t.test(String(gap), async () => {
+        const target = { ...catalogTarget, schedule: { mode: "fixed", times: ["08:30"], min_interval_minutes: gap },
+            schedule_date: "2026-11-12", slots: [{ at: "2026-11-12T00:30:00.000Z", attempted: false, result: "PLANNED" }] };
+        const page = managedPage(async () => targetReply(target)); await page.settle();
+        const article = findNode(page.node("[data-targets]"), "targetId", "primary");
+        const description = article.children[0].children[0];
+        const disclosures = description.children.filter(item => item.tagName === "DETAILS");
+        assert.equal(disclosures.length, 1);
+        assert.notEqual(disclosures[0].open, true);
+        assert.match(textTree(disclosures[0]), text);
+        assert.match(textTree(disclosures[0]), /当前执行计划.*2026-11-12.*08:30.*待执行/);
+        assert.ok(!description.children.some(item => item.tagName === "P" && item.textContent.includes("生效排期")));
+        if (gap > 1440) assert.ok(!textTree(disclosures[0]).includes("1 次/天"));
+    });
 });

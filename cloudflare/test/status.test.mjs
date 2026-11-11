@@ -12,7 +12,11 @@ if (!crypto.subtle.timingSafeEqual) crypto.subtle.timingSafeEqual = (a,b) => tim
 const configured = (targets = [target()]) => ({
     DEBUG_ACCESS_TOKEN: access, ADMIN_USERNAME: "test-admin", ADMIN_PASSWORD: "dummy-long-secret-for-tests",
     TRIGGER_CONFIG: JSON.stringify({ version: 1, targets }),
-    PRIVATE_TOKEN: "github_pat_private_marker_value", SCHEDULES: {},
+    PRIVATE_TOKEN: "github_pat_private_marker_value", SCHEDULES: {
+        idFromName: name => name, get(name) {
+            assert.equal(name, "catalog:v1");
+            return { async fetch(request) { assert.equal(new URL(request.url).pathname, "/catalog/read"); return Response.json(null); } };
+        } },
 });
 
 function denyEffects(t) {

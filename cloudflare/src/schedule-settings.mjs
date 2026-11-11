@@ -32,6 +32,6 @@ export function effectiveTarget(target, settings) {
 
 export function settingsState(target, settings) {
     const matched = settings?.binding === settingsBinding(target);
-    return { schedule_source: matched && settings.schedule !== null ? "database" : "variable",
+    return { schedule_source: target.catalog_revision !== undefined || matched && settings.schedule !== null ? "database" : "variable",
         schedule_revision: matched ? settings.revision : 0, target_binding: settingsBinding(target) };
 }

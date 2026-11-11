@@ -23,7 +23,7 @@ function diagnostic(schedule, field, code) {
 test("interval accepts integer endpoints and exports the shared omitted default", () => {
     assert.equal(typeof config.intervalMinutes, "function");
     assert.equal(config.intervalMinutes({ mode: "fixed", times: ["09:00"] }), 1);
-    for (const gap of [1, 2, 60, 1440]) {
+    for (const gap of [1, 2, 60, 1440, 1441, 2880, 525600]) {
         for (const schedule of [{ mode: "fixed", times: ["09:00"], min_interval_minutes: gap },
             random(1, "09:00", "09:00", gap)]) {
             const normalized = normalizeSchedule(schedule);
@@ -34,7 +34,7 @@ test("interval accepts integer endpoints and exports the shared omitted default"
 });
 
 test("explicit invalid interval values fail with the safe interval field diagnostic", () => {
-    for (const gap of [undefined, null, true, false, "1", "private_interval_marker", 1.5, 0, -1, 1441, NaN, Infinity, {}, []]) {
+    for (const gap of [undefined, null, true, false, "1", "private_interval_marker", 1.5, 0, -1, 525601, NaN, Infinity, {}, []]) {
         for (const schedule of [{ mode: "fixed", times: ["09:00"], min_interval_minutes: gap },
             { ...random(1, "09:00", "09:00"), min_interval_minutes: gap }]) {
             diagnostic(schedule, ".min_interval_minutes", "SCHEDULE_INTERVAL");
@@ -84,6 +84,18 @@ test("random daily density rejects impossible repeating counts even in a wide wi
     diagnostic(random(2, "00:00", "23:59", 721), ".count", "SCHEDULE_CAPACITY");
     diagnostic(random(24, "00:00", "23:59", 61), ".count", "SCHEDULE_CAPACITY");
     assert.equal(normalizeSchedule(random(24, "00:00", "23:00", 60)).count, 24);
+});
+
+test("intervals above one day only allow one fixed or random slot", () => {
+    for (const gap of [1441, 2880, 525600]) {
+        diagnostic({ mode: "fixed", times: ["00:00", "23:59"], min_interval_minutes: gap },
+            ".times", "SCHEDULE_SPACING");
+        diagnostic(random(2, "00:00", "23:59", gap), ".count", "SCHEDULE_CAPACITY");
+        for (const schedule of [{ mode: "fixed", times: ["09:00"], min_interval_minutes: gap },
+            random(1, "09:00", "10:00", gap)]) {
+            assert.deepEqual(parsedTarget(schedule).schedule, schedule);
+        }
+    }
 });
 
 test("optional interval keeps strict mode keys and existing validation diagnostics", () => {
@@ -152,6 +164,81 @@ test("single random slot supports a zero-span endpoint and full-day interval", t
     assert.deepEqual(minutesOf(plan), [1439]);
     assert.equal(plan.slots[0].result, "PLANNED");
     assert.equal(validPlan(plan), true);
+});
+
+test("long-gap fixed plans use the first daily slot at or after the future horizon", () => {
+    const item = target({ mode: "fixed", times: ["09:00"], min_interval_minutes: 2880 });
+    for (const [earliest, want] of [
+        ["2026-11-10T00:00:00+08:00", "2026-11-10T09:00:00+08:00"],
+        ["2026-11-10T09:00:00+08:00", "2026-11-10T09:00:00+08:00"],
+        ["2026-11-10T09:00:00.001+08:00", "2026-11-11T09:00:00+08:00"],
+        ["2027-11-08T09:00:00+08:00", "2027-11-08T09:00:00+08:00"],
+    ]) {
+        const plan = createPlan(item, null, midnight, false, Date.parse(earliest));
+        assert.deepEqual(plan.slots, [{ at: Date.parse(want), attempted: false, result: "PLANNED" }]);
+        assert.equal(validPlan(plan), true);
+    }
+});
+
+test("long-gap random plans clip future-day windows to the earliest allowed minute", t => {
+    const item = target(random(1, "09:00", "10:00", 2880));
+    for (const [earliest, first, last] of [
+        ["2026-11-10T00:00:00+08:00", "2026-11-10T09:00:00+08:00", "2026-11-10T10:00:00+08:00"],
+        ["2026-11-10T09:00:00+08:00", "2026-11-10T09:00:00+08:00", "2026-11-10T10:00:00+08:00"],
+        ["2026-11-10T09:30:00.001+08:00", "2026-11-10T09:31:00+08:00", "2026-11-10T10:00:00+08:00"],
+        ["2026-11-10T10:00:00+08:00", "2026-11-10T10:00:00+08:00", "2026-11-10T10:00:00+08:00"],
+        ["2026-11-10T10:00:00.001+08:00", "2026-11-11T09:00:00+08:00", "2026-11-11T10:00:00+08:00"],
+    ]) {
+        for (const [draw, want] of [[0, first], [(Date.parse(last) - Date.parse(first)) / 60000, last]]) {
+            t.mock.method(crypto, "getRandomValues", bytes => { bytes[0] = draw; return bytes; });
+            const plan = createPlan(item, null, midnight, false, Date.parse(earliest));
+            assert.deepEqual(plan.slots, [{ at: Date.parse(want), attempted: false, result: "PLANNED" }]);
+            assert.equal(validPlan(plan), true);
+            t.mock.restoreAll();
+        }
+    }
+});
+
+test("future long-gap random horizon at local midnight includes that exact daily slot", t => {
+    t.mock.method(crypto, "getRandomValues", bytes => { bytes[0] = 0; return bytes; });
+    const plan = createPlan(target(random(1, "00:00", "00:00", 525600)), null, midnight, false,
+        Date.parse("2027-11-08T00:00:00+08:00"));
+    assert.equal(plan.date, "2027-11-08");
+    assert.deepEqual(plan.slots, [{ at: Date.parse("2027-11-08T00:00:00+08:00"), attempted: false, result: "PLANNED" }]);
+    assert.equal(validPlan(plan), true);
+});
+
+test("future horizon retains afterPrevious date ordering and the last result", t => {
+    t.mock.method(crypto, "getRandomValues", bytes => { bytes[0] = 0; return bytes; });
+    const previous = { date: "2026-11-10", slots: [{ at: Date.parse("2026-11-10T09:00:00+08:00"),
+        attempted: true, result: "DISPATCH_UNKNOWN", notification: "NOTIFY_ACCEPTED" }] };
+    for (const schedule of [{ mode: "fixed", times: ["09:00"], min_interval_minutes: 2880 },
+        random(1, "09:00", "10:00", 2880)]) {
+        const plan = createPlan(target(schedule), previous, midnight, true, Date.parse("2026-11-10T09:00:00+08:00"));
+        assert.equal(plan.date, "2026-11-11");
+        assert.equal(plan.slots[0].at, Date.parse("2026-11-11T09:00:00+08:00"));
+        assert.deepEqual(plan.last, { date: "2026-11-10", at: previous.slots[0].at,
+            result: "DISPATCH_UNKNOWN", notification: "NOTIFY_ACCEPTED" });
+        assert.equal(validPlan(plan), true);
+    }
+});
+
+test("default and elapsed horizons preserve fixed missed flags and the next full random window", t => {
+    t.mock.method(crypto, "getRandomValues", bytes => { bytes[0] = 0; return bytes; });
+    const now = Date.parse("2026-11-08T09:00:00+08:00");
+    for (const earliest of [undefined, now, midnight]) {
+        const fixed = createPlan(target({ mode: "fixed", times: ["09:00", "18:00"] }), null, now, false, earliest);
+        assert.equal(fixed.date, "2026-11-08");
+        assert.deepEqual(fixed.slots, [
+            { at: now, attempted: true, result: "MISSED_DATE" },
+            { at: Date.parse("2026-11-08T18:00:00+08:00"), attempted: false, result: "PLANNED" },
+        ]);
+        for (const gap of [1, 2880]) {
+            const plan = createPlan(target(random(1, "09:00", "10:00", gap)), null, now, false, earliest);
+            assert.equal(plan.date, "2026-11-09");
+            assert.equal(plan.slots[0].at, Date.parse("2026-11-09T09:00:00+08:00"));
+        }
+    }
 });
 
 test("explicit default interval migrates v1 bindings without redraw or lost attempted state", () => {

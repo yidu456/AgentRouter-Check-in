@@ -378,6 +378,7 @@ test("public requests are 404 and daily initialization isolates object failures"
     f.env.SCHEDULES = {
         idFromName(name) { return name; },
         get(name) { return { async fetch(req) {
+            if (name === "catalog:v1") { assert.equal(new URL(req.url).pathname, "/catalog/read"); return Response.json(null); }
             initialized.push(new URL(req.url).searchParams.get("id"));
             if (name.endsWith("github_a")) throw new Error("object-private-marker");
             return new Response(null, { status: 200 });
