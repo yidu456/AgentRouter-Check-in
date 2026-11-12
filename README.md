@@ -61,7 +61,7 @@ Cloudflare 只启动 GitHub Actions，不在 Worker 内运行浏览器。每个�
 1. Workers Builds 连接自己的仓库：生产分支 `main`，Root directory `cloudflare`，Build `npm test`，Deploy `npm run deploy`。
 2. Worker 运行时设置 GitHub PAT Secret（`GITHUB_TOKEN` 或 `GITHUB_TOKEN_*`）；不要填在 Build variables。`TRIGGER_CONFIG` 仅用于可选旧配置导入，不是新建目标的必填项。令牌创建步骤见 **[令牌指南](cloudflare/API-TOKENS.md)**。
 3. 设置 `DEBUG_ACCESS_TOKEN`（隐藏入口值）、`ADMIN_USERNAME` 和 `ADMIN_PASSWORD`。`/` 只有 `hello world`，打开 **`/<入口值>`** 用用户名密码登录，不是固定 `/token`。
-4. 管理页分为 **仓库管理 / 配置检查 / 运行日志 / 使用说明**。在紧凑目标列表点击“新增目标”或目标设置，弹窗填写名称、`owner/repo`、分支/标签、`.yml`/`.yaml` 文件名、凭据引用、开关和排期。凭据下拉只显示可用 Secret 名称，不显示令牌值；间隔可选分钟/小时/天。保存到现有 `SCHEDULES` 数据库，刷新和重部署保留。安全会话仍有效 12 小时，日志单独查看。
+4. 管理页分为 **仓库管理 / 配置检查 / 运行日志 / 使用说明**。在轻量网格卡片中点击“新增目标”或目标设置，弹窗填写名称、`owner/repo`、分支/标签、`.yml`/`.yaml` 文件名、凭据引用、开关和排期。凭据下拉只显示可用 Secret 名称，不显示令牌值；间隔可选分钟/小时/天。保存到现有 `SCHEDULES` 数据库，刷新和重部署保留。安全会话仍有效 12 小时，日志单独查看。
 5. 确认各目标默认分支的旧 `on.schedule` 已关闭，保留 `workflow_dispatch`。当前版本默认关闭内置 Cron；如果你另行开启，两套定时都可能运行。
 
 新目标默认开启；首次登录管理页会为已开启且 Token 有效的新目标保存未来日程，无需关闭再开启。刷新不重新抽时间，也不立即触发；缺失的未来 Alarm 可按原时间恢复。明确 `enabled:false` 和已有数据库关闭状态不重置。手动运行不占自动次数，日志删除不改变日程。Worker 企业微信仅说明 GitHub 是否受理触发，不是 Actions 已完成或签到成功。固定/随机填写规则与升级回退注意事项见部署指南。

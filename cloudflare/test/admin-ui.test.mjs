@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import worker from "../src/worker.mjs";
-import { adminClient } from "../src/admin-ui.mjs";
+import { adminClient, adminShell } from "../src/admin-ui.mjs";
 import { runInNewContext } from "node:vm";
 
 const access = "dummy_admin_access_" + "x".repeat(32);
@@ -1298,5 +1298,46 @@ test("compact rows keep schedule and plan in one collapsed disclosure with reada
         assert.match(textTree(disclosures[0]), /当前执行计划.*2026-11-12.*08:30.*待执行/);
         assert.ok(!description.children.some(item => item.tagName === "P" && item.textContent.includes("生效排期")));
         if (gap > 1440) assert.ok(!textTree(disclosures[0]).includes("1 次/天"));
+    });
+});
+
+test("lightweight grid uses a card header and action footer without a list column header", async () => {
+    assert.ok(!adminShell().includes('class="ar-list-head"'));
+    const page = managedPage();
+    await page.settle();
+    const card = findNode(page.node("[data-targets]"), "targetId", "primary");
+    const main = card.children[0], body = main.children[0];
+    assert.equal(body.className, "ar-card-scroll");
+    assert.equal(body.attributes.role, "region");
+    assert.match(body.attributes["aria-label"], /daily-checkin/);
+    const heading = body.children.find(item => item.className === "ar-repo-line");
+    assert.match(textTree(heading), /daily-checkin.*已开启/);
+    assert.match(textTree(body), /fixture\/team.*分支.*main.*工作流.*Checkin.yml/);
+    const footer = main.children.find(item => item.className === "ar-card-bottom");
+    assert.ok(footer, "Next time and actions have a shared card footer");
+    assert.ok(findNode(footer, "next", ""));
+    assert.ok(findNode(footer, "action", "settings"));
+    assert.ok(findNode(footer, "action", "run"));
+    assert.ok(findNode(body, "action", "toggle"));
+    assert.ok(!findNode(body, "scheduleForm", "primary"));
+    openTarget(page);
+    assert.equal(popupField(page, "repository").value, "fixture/team");
+    popupEdit(page, "name", "");
+    popupSubmit(page);
+    await page.settle();
+    const updated = findNode(page.node("[data-targets]"), "targetId", "primary");
+    assert.equal(updated.children.length, 1, "Feedback cannot extend the fixed card height");
+    assert.ok(updated.children[0].children[0].children.some(item => item.className === "ar-card-feedback"));
+});
+
+test("lightweight cards retain disabled and unavailable controls with their target context", async t => {
+    for (const extra of [{ enabled: false }, { token_state: "missing" }, { error: "STORAGE_UNAVAILABLE",
+        schedule_source: null, schedule_revision: null, target_binding: null }]) await t.test(JSON.stringify(extra), async () => {
+        const page = managedPage(async () => targetReply({ ...catalogTarget, ...extra }));
+        await page.settle();
+        const card = findNode(page.node("[data-targets]"), "targetId", "primary");
+        assert.equal(findNode(card, "action", "run").disabled, true);
+        assert.match(textTree(card), /fixture\/team.*Checkin.yml/);
+        assert.equal(Boolean(findNode(card, "action", "settings")), !extra.error);
     });
 });
